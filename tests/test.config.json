@@ -1,0 +1,21 @@
+{
+  "activeProvider": "openai",
+  "apiKeys": {
+    "openai": "sk-your-openai-api-key-here",
+    "claude": "sk-ant-your-claude-api-key-here",
+    "openrouter": "sk-or-your-openrouter-key-here",
+    "meta": "gsk_your_groq_or_meta_key_here"
+  },
+  "customEndpoints": {
+    "ollama": "http://localhost:11434/api/chat"
+  },
+  "selectedModels": {
+    "openai": "gpt-4o-mini",
+    "claude": "claude-3-5-haiku-20241022",
+    "openrouter": "meta-llama/llama-3.1-8b-instruct:free",
+    "meta": "llama-3.1-8b-instant",
+    "ollama": "llama3.2:latest"
+  },
+  "domMarkersEnabled": true,
+  "debugMode": true
+}

@@ -107,6 +107,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   updateProviderUI(activeProvider, settings);
 
+  const testConnectionBtn = document.getElementById("testConnectionBtn");
+  const testConnectionStatus = document.getElementById("testConnectionStatus");
+
   // Switch Provider dropdown listener
   providerSelect.addEventListener("change", (e) => {
     const selected = e.target.value;
@@ -120,6 +123,37 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isDev) {
       showToast("🛠️ Developer Debug Mode Enabled! Debug tab unlocked.");
     }
+  });
+
+  // Test Connection Button Listener
+  testConnectionBtn.addEventListener("click", async () => {
+    const providerId = providerSelect.value;
+    const apiKey = apiKeyInput.value.trim();
+    const model = modelSelect.value.trim();
+    const endpoint = endpointInput.value.trim();
+
+    testConnectionStatus.className = "test-conn-status status-loading";
+    testConnectionStatus.textContent = "⏳ Testing...";
+    testConnectionBtn.disabled = true;
+
+    chrome.runtime.sendMessage({
+      type: "TEST_PROVIDER_CONNECTION",
+      payload: { providerId, apiKey, model, endpoint }
+    }, (res) => {
+      testConnectionBtn.disabled = false;
+      if (res && res.success) {
+        testConnectionStatus.className = "test-conn-status status-ok";
+        testConnectionStatus.textContent = "✓ Connected successfully!";
+        showToast(`Connected to ${PROVIDERS[providerId]?.name || providerId}!`);
+        loadMetrics();
+      } else {
+        testConnectionStatus.className = "test-conn-status status-err";
+        const err = res?.error || "Connection failed";
+        testConnectionStatus.textContent = `✗ ${err.slice(0, 32)}...`;
+        testConnectionStatus.title = err;
+        showToast(`Error: ${err.slice(0, 40)}`);
+      }
+    });
   });
 
   // Master Toggle listener

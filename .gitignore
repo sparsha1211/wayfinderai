@@ -7,7 +7,11 @@
 ehthumbs.db
 Thumbs.db
 
-# Node / Build artifacts (if added later)
+# Test results & Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
 node_modules/
 dist/
 *.log

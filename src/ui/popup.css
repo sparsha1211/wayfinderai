@@ -299,6 +299,35 @@ input:checked + .slider:before {
   margin-bottom: 12px;
 }
 
+.test-conn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  margin-bottom: 12px;
+}
+
+.test-conn-status {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 210px;
+}
+
+.test-conn-status.status-ok {
+  color: #10b981;
+}
+
+.test-conn-status.status-err {
+  color: #ef4444;
+}
+
+.test-conn-status.status-loading {
+  color: #6366f1;
+}
+
 /* Buttons */
 .action-buttons {
   margin-top: 14px;

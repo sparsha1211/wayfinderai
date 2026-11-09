@@ -1,41 +1,67 @@
 # Wayfinder AI - Smart Web Navigation AI Assistant (Chrome Extension)
 
-A lightweight, professional Chrome Extension (Manifest V3) that acts as an intelligent in-page co-pilot for web navigation. Wayfinder AI features 3 distinct interaction modes, in-page DOM marker overlays, text-selection AI explanations, detailed usage/token metrics, and a dedicated **Developer Debug Mode** for inspecting raw requests and responses.
+A lightweight, professional Chrome Extension (Manifest V3) that acts as an intelligent in-page co-pilot for web navigation. Wayfinder AI features 3 distinct interaction modes, in-page DOM marker overlays, automated DOM change & navigation re-analysis with rate-limiting, test-connection checks for all AI providers, usage/token metrics, and a dedicated **Playwright E2E Testing Suite**.
 
 ---
 
-## ✨ Key Features & 3 Modes of Interaction
+## ✨ Key Features
 
-1. **Floating Signal Beacon & Guidance HUD**:
-   - Subtle pulse beacon positioned at the bottom right.
-   - **Hover** over the beacon to preview page analysis — seamlessly moving the mouse into the panel keeps it open.
-   - **Click** the beacon or the pin button to pin the panel open permanently.
-   - **Click suggested action chips**: Wayfinder smoothly scrolls to the element and runs an illuminated spotlight pulse animation.
+1. **Test Connection for All AI Providers**:
+   - In the popup, click **⚡ Test Connection** beside your API key and model config.
+   - Instantly pings your selected provider (OpenAI, Claude, OpenRouter, Meta/Groq, or Ollama) with real-time feedback (`✓ Connected successfully!` or clear error explanation).
 
-2. **In-Page DOM Purple Markers (Toggleable in Settings)**:
-   - When enabled, Wayfinder identifies interesting items on the page (key buttons, primary links, actions).
-   - Injects animated purple beacon markers directly beside those DOM elements.
-   - **Hovering or clicking on any marker** reveals an instant contextual advice tooltip.
+2. **Automated Dynamic DOM Mutation & Route Change Observer**:
+   - Wayfinder AI automatically detects when:
+     - You navigate to a new page or refresh.
+     - Single Page Applications (SPA) change URL client-side.
+     - Dynamic AJAX / DOM content updates on the active page.
+   - Includes a **rate limiter (6-second threshold + 2.5s mutation debounce)** to prevent excessive AI queries or API cost runaway.
 
-3. **In-Page Text Selection AI Copilot**:
-   - Highlight any text or sentence on any webpage.
-   - A floating *"Analyze with AI"* button pops up beside your selection.
-   - Click to get an instant TL;DR and decision/navigation insight right on the page without opening another tab.
+3. **In-Page DOM Purple Markers & 3 Modes of Interaction**:
+   - **Mode 1 (Signal Beacon HUD)**: Floating bottom-right beacon. Hover to preview analysis; click to pin permanently.
+   - **Mode 2 (DOM Markers with Popovers)**: Glowing purple beacons beside key action elements. Click or hover on any marker for in-page contextual advice.
+   - **Mode 3 (Text Selection Copilot)**: Highlight text anywhere on the page and click *"Analyze with AI"* for an instant in-place explanation.
 
-4. **Metrics & Token Usage Dashboard**:
-   - Track **Total AI Calls Made**, **Total Tokens**, **Input/Prompt Tokens**, and **Output/Completion Tokens**.
-   - View per-provider request breakdown (e.g., Ollama vs. OpenAI vs. Claude).
-   - Real-time updates with one-click counter reset.
+4. **Metrics & Developer Debug Mode**:
+   - Live token and request tracking (Prompt tokens, completion tokens, breakdown by provider).
+   - Toggle **Developer Debug Mode** to inspect raw payloads, duration in milliseconds, and error traces.
 
-5. **🛠️ Developer Debug Mode (Inspector Panel)**:
-   - Toggle **Developer Debug Mode** in the Settings tab.
-   - Unlocks a dedicated **"🛠️ Debug Logs"** console tab in the popup.
-   - Inspect:
-     - Exact latency / duration in milliseconds.
-     - Prompt payloads sent to the AI (DOM context, headings, interactive elements).
-     - Full raw responses or exact HTTP error messages.
-     - Token counts per call.
-     - One-click log refresh and purge controls.
+---
+
+## 🧪 Playwright End-to-End (E2E) Testing
+
+Wayfinder AI includes an automated Playwright E2E testing framework in [`tests/`](file:///Volumes/Workspace/ai_assist_chrome/tests/).
+
+### Running the E2E Tests:
+
+1. **Configure your API Key (Optional)**:
+   Edit [`tests/test.config.json`](file:///Volumes/Workspace/ai_assist_chrome/tests/test.config.json):
+   ```json
+   {
+     "activeProvider": "openai",
+     "apiKeys": {
+       "openai": "sk-your-real-key-here"
+     }
+   }
+   ```
+   *(By default, it tests with Ollama / local mock structure without requiring paid keys).*
+
+2. **Run Tests**:
+   ```bash
+   npx playwright test
+   ```
+   Or to run with the interactive UI:
+   ```bash
+   npx playwright test --ui
+   ```
+
+### What the E2E Tests Verify:
+- **E2E-1**: Extension popup loads, verifies master toggle, and validates UI navigation tabs.
+- **E2E-2**: Validates the **Test Connection** button against configured provider settings.
+- **E2E-3**: Injects the floating beacon HUD and verifies that **Purple DOM Markers** attach to key interactive elements.
+- **E2E-4**: Validates hover and click-to-pin behavior on the guidance overlay.
+- **E2E-5**: Highlights on-page text and asserts that the **"Analyze with AI"** copilot pill appears.
+- **E2E-6**: Triggers dynamic DOM mutation and verifies that the observer updates the in-page navigation context.
 
 ---
 
@@ -45,39 +71,23 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
 ai_assist_chrome/
 ├── manifest.json                  # Manifest V3 extension configuration
 ├── icons/                         # 16px, 48px, 128px extension icons
+├── e2e-fixtures/                  # Sample test portal for automated testing
+│   └── sample-page.html
+├── tests/
+│   ├── extension.spec.js          # Playwright test suite
+│   └── test.config.json           # User configuration (API keys, provider choice)
+├── playwright.config.js           # Playwright test configuration
+├── package.json                   # Test dependencies
 ├── src/
-│   ├── background.js              # Service worker (AI dispatch, debug logs, metrics)
-│   ├── content.js                 # Content script (HUD, DOM markers, Text selection)
+│   ├── background.js              # Service worker (AI dispatch, test connection, metrics)
+│   ├── content.js                 # Content script (HUD, DOM markers, MutationObserver, rate limiter)
 │   ├── content.css                # Styling for beacon, cards, DOM markers, and selection popovers
 │   ├── services/
-│   │   ├── aiProviders.js         # Provider integrations + Token usage parsers
+│   │   ├── aiProviders.js         # Provider integrations + Token usage + Connectivity tester
 │   │   └── patternLearner.js      # Local history & workflow pattern learner
 │   └── ui/
 │       ├── popup.html             # Control center UI (Settings, Metrics, Guide, Dev Console)
 │       ├── popup.css              # Clean, modern popup design with dev console styles
-│       └── popup.js               # Settings, Metrics & Debug Logs controller
+│       └── popup.js               # Settings, Metrics, Test Connection & Debug Logs controller
 └── README.md                      # Documentation & installation guide
 ```
-
----
-
-## 🚀 Installation & Testing
-
-1. Open Google Chrome and navigate to:
-   ```
-   chrome://extensions/
-   ```
-2. Enable **Developer mode** in the top right corner.
-3. Click the **Reload** button on the Wayfinder AI card.
-4. Click the Wayfinder AI toolbar icon to open settings.
-5. Toggle **Developer Debug Mode** ON to unlock the **🛠️ Debug Logs** tab and inspect live requests!
-
----
-
-## ⚙️ Providers Supported
-
-- **Ollama (Local AI - Free & Offline)**: Default endpoint `http://localhost:11434/api/chat`. Remember to launch Ollama with `OLLAMA_ORIGINS="*" ollama serve` to permit Chrome Extension requests.
-- **OpenAI**: `gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo`.
-- **Anthropic Claude**: `claude-3-5-haiku-20241022`, `claude-3-5-sonnet-20241022`.
-- **OpenRouter**: Aggregator for hundreds of open models.
-- **Meta / Muse**: Llama 3.1 & 3.3 models via Groq or custom endpoints.

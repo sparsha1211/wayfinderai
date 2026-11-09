@@ -18,6 +18,11 @@
   let selectionButton = null;
   let selectionPopover = null;
 
+  let lastAnalysisTime = 0;
+  const RATE_LIMIT_MS = 6000; // minimum 6 seconds between automatic AI page re-analyses
+  let domChangeDebounceTimer = null;
+  let lastUrl = window.location.href;
+
   /**
    * 1. Extract context from DOM
    */
@@ -181,7 +186,13 @@
     const pinBadge = document.getElementById("wayfinder-pin-badge");
     const pinBtn = document.getElementById("wayfinder-pin-btn");
     if (pinBadge) pinBadge.style.display = isCardPinned ? "inline-block" : "none";
-    if (pinBtn) pinBtn.classList.toggle("active-pin", isCardPinned);
+    if (pinBtn) {
+      if (isCardPinned) {
+        pinBtn.classList.add("active-pin");
+      } else {
+        pinBtn.classList.remove("active-pin");
+      }
+    }
   }
 
   /**
@@ -189,6 +200,11 @@
    */
   async function runPageAnalysis(force = false) {
     if (isAnalyzing && !force) return;
+
+    const now = Date.now();
+    if (!force && (now - lastAnalysisTime < RATE_LIMIT_MS)) {
+      return; // Rate limited, skip redundant call
+    }
 
     const { wayfinder_settings: settings = {} } = await chrome.storage.local.get("wayfinder_settings");
     if (settings.enabled === false) {
@@ -201,6 +217,7 @@
 
     injectBeaconHUD();
     isAnalyzing = true;
+    lastAnalysisTime = Date.now();
 
     // Place initial DOM markers so user sees interesting interactable items right away
     if (settings.domMarkersEnabled !== false) {
@@ -579,6 +596,39 @@
   });
 
   initTextSelectionCopilot();
+
+  // Watch for SPA client-side route changes (URL changes without full page reload)
+  setInterval(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      runPageAnalysis(true);
+    }
+  }, 1000);
+
+  // Watch for major DOM content changes (with debounce and rate limit)
+  const domObserver = new MutationObserver((mutations) => {
+    let significantChange = false;
+    for (const m of mutations) {
+      if (m.target && (m.target.closest?.("#wayfinder-hud-root") || m.target.closest?.("#wayfinder-selection-popover") || m.target.classList?.contains?.("wayfinder-dom-marker"))) {
+        continue;
+      }
+      if (m.addedNodes.length > 0 || m.removedNodes.length > 0) {
+        significantChange = true;
+        break;
+      }
+    }
+
+    if (significantChange) {
+      clearTimeout(domChangeDebounceTimer);
+      domChangeDebounceTimer = setTimeout(() => {
+        runPageAnalysis(false); // will honor RATE_LIMIT_MS
+      }, 2500); // Debounce by 2.5s to let dynamic rendering settle
+    }
+  });
+
+  if (document.body) {
+    domObserver.observe(document.body, { childList: true, subtree: true });
+  }
 
   setTimeout(() => {
     runPageAnalysis();

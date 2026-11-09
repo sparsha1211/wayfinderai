@@ -1,0 +1,14 @@
+{
+  "name": "wayfinder-ai-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for Wayfinder AI Chrome Extension",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:mock": "playwright test tests/extension.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

@@ -59,6 +59,38 @@ export const PROVIDERS = {
 
 export class AIService {
   /**
+   * Test connection to provider with given key / endpoint / model
+   */
+  static async testConnection({ providerId, apiKey, endpoint, model }) {
+    const config = PROVIDERS[providerId] || PROVIDERS.openai;
+    const activeEndpoint = endpoint || config.defaultEndpoint;
+    const activeModel = model || config.defaultModel;
+
+    if (config.requiresKey && !apiKey) {
+      throw new Error(`API key is required to test ${config.name}.`);
+    }
+
+    const testPrompt = "Ping. Reply with strictly: pong";
+    const res = await this.requestGuidance({
+      providerId,
+      apiKey,
+      endpoint: activeEndpoint,
+      model: activeModel,
+      systemPrompt: "You are a connectivity tester.",
+      userPrompt: testPrompt,
+      responseFormat: "text"
+    });
+
+    return {
+      success: true,
+      provider: providerId,
+      model: activeModel,
+      reply: res.data?.text || "Connected successfully!",
+      usage: res.usage
+    };
+  }
+
+  /**
    * Send navigation guidance query or text selection analysis
    */
   static async requestGuidance({ providerId, apiKey, endpoint, model, systemPrompt, userPrompt, responseFormat = "json" }) {
@@ -123,7 +155,6 @@ export class AIService {
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || "";
     
-    // Calculate or fallback token metrics
     let promptTokens = data.usage?.prompt_tokens || 0;
     let completionTokens = data.usage?.completion_tokens || 0;
     if (!promptTokens) {

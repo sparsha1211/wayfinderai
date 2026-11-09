@@ -94,6 +94,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "TEST_PROVIDER_CONNECTION") {
+    handleTestConnection(message.payload)
+      .then(sendResponse)
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (message.type === "ANALYZE_SELECTED_TEXT") {
     handleSelectedTextAnalysis(message.payload)
       .then(sendResponse)
@@ -149,6 +156,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+/**
+ * Handle testing connection to a selected AI provider
+ */
+async function handleTestConnection({ providerId, apiKey, endpoint, model }) {
+  const startTime = Date.now();
+  try {
+    const result = await AIService.testConnection({ providerId, apiKey, endpoint, model });
+    const durationMs = Date.now() - startTime;
+    await recordMetrics(providerId, result.usage);
+
+    await logDebugEntry({
+      type: "TEST_CONNECTION",
+      status: "SUCCESS",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      usage: result.usage,
+      response: result.reply
+    });
+
+    return result;
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    await logDebugEntry({
+      type: "TEST_CONNECTION",
+      status: "ERROR",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      error: error.message
+    });
+    return { success: false, error: error.message };
+  }
+}
 
 /**
  * Handle in-page navigation assistance
