@@ -48,10 +48,19 @@ export const PROVIDERS = {
   },
   ollama: {
     id: "ollama",
-    name: "Ollama (Local AI)",
+    name: "Ollama (Mac Local AI)",
     defaultEndpoint: "http://localhost:11434/api/chat",
     defaultModel: "llama3.2:latest",
     models: ["llama3.2:latest", "mistral:latest", "qwen2.5:latest"],
+    requiresKey: false,
+    isLocal: true
+  },
+  chrome_builtin: {
+    id: "chrome_builtin",
+    name: "Chrome Built-in AI (Gemini Nano on Mac)",
+    defaultEndpoint: "chrome://flags/#optimization-guide-on-device-model",
+    defaultModel: "gemini-nano",
+    models: ["gemini-nano"],
     requiresKey: false,
     isLocal: true
   }
@@ -104,6 +113,8 @@ export class AIService {
 
     if (providerId === "ollama") {
       return this._callOllama({ endpoint: activeEndpoint, model: activeModel, systemPrompt, userPrompt, responseFormat });
+    } else if (providerId === "chrome_builtin") {
+      return this._callChromeBuiltinAI({ systemPrompt, userPrompt, responseFormat });
     } else if (providerId === "claude") {
       return this._callClaude({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, responseFormat });
     } else {
@@ -172,6 +183,37 @@ export class AIService {
 
     const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
     return { data: parsed, usage };
+  }
+
+  static async _callChromeBuiltinAI({ systemPrompt, userPrompt, responseFormat }) {
+    // Check if Chrome's window.ai (Gemini Nano) is available in browser context
+    const aiApi = typeof window !== "undefined" ? (window.ai || window.modelExecutionService) : null;
+    if (!aiApi || (!aiApi.languageModel && !aiApi.createTextSession)) {
+      throw new Error("Chrome Built-in AI (Gemini Nano) is not enabled on this browser. Enable it in chrome://flags/#optimization-guide-on-device-model and chrome://flags/#prompt-api-for-gemini-nano");
+    }
+
+    try {
+      const session = aiApi.languageModel
+        ? await aiApi.languageModel.create({ systemPrompt })
+        : await aiApi.createTextSession();
+
+      const fullPrompt = `${systemPrompt}\n\nTask: ${userPrompt}`;
+      const responseText = await session.prompt(fullPrompt);
+
+      const promptTokens = Math.ceil(fullPrompt.length / 4);
+      const completionTokens = Math.ceil(responseText.length / 4);
+
+      const usage = {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens
+      };
+
+      const parsed = responseFormat === "json" ? this._parseJsonResponse(responseText) : { text: responseText };
+      return { data: parsed, usage };
+    } catch (err) {
+      throw new Error(`Chrome Built-in AI Error: ${err.message}`);
+    }
   }
 
   static async _callClaude({ endpoint, apiKey, model, systemPrompt, userPrompt, responseFormat }) {
