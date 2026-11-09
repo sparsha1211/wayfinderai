@@ -331,6 +331,7 @@
   cursor: pointer;
   pointer-events: auto;
   display: inline-block;
+  overflow: visible !important;
 }
 
 .wayfinder-marker-dot {
@@ -339,8 +340,9 @@
   border-radius: 50%;
   background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
   border: 2px solid #ffffff;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.6);
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.7);
   animation: wayfinder-marker-bounce 2s infinite ease-in-out;
+  pointer-events: auto;
 }
 
 @keyframes wayfinder-marker-bounce {

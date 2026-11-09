@@ -354,13 +354,30 @@
   function applyHeuristicDomMarkers() {
     if (document.querySelector(".wayfinder-dom-marker")) return; // already marked
 
-    const candidates = Array.from(document.querySelectorAll("button, a.btn, a.button, input[type='submit'], header nav a, main h1, [role='button']"))
-      .filter(el => {
-        if (el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover")) return false;
+    const selectors = [
+      "main button", "header button", "button",
+      "header nav a", "nav a", "main a.btn", "main a.button", "a.btn",
+      "[role='button']", "input[type='submit']",
+      "main h1", "h1"
+    ];
+
+    const candidates = [];
+    const seen = new Set();
+
+    for (const sel of selectors) {
+      const elements = Array.from(document.querySelectorAll(sel));
+      for (const el of elements) {
+        if (candidates.length >= 5) break;
+        if (seen.has(el) || el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover")) continue;
+        
         const rect = el.getBoundingClientRect();
-        return rect.width > 20 && rect.height > 15;
-      })
-      .slice(0, 4);
+        if (rect.width > 20 && rect.height > 15) {
+          seen.add(el);
+          candidates.push(el);
+        }
+      }
+      if (candidates.length >= 5) break;
+    }
 
     const heuristicItems = candidates.map(el => ({
       element: el,
@@ -415,13 +432,25 @@
           }
         });
 
-        // Ensure target is relative so marker positions neatly
-        const currentPos = window.getComputedStyle(target).position;
-        if (currentPos === "static") {
+        // Ensure parent can host positioned child properly without clipping
+        const computed = window.getComputedStyle(target);
+        if (computed.position === "static") {
           target.style.position = "relative";
         }
+        if (computed.overflow === "hidden") {
+          target.style.overflow = "visible";
+        }
 
-        target.appendChild(marker);
+        // Attach marker
+        try {
+          target.appendChild(marker);
+        } catch (e) {
+          // If element doesn't allow children (e.g. input), insert as sibling
+          if (target.parentNode) {
+            target.parentNode.style.position = target.parentNode.style.position === "static" ? "relative" : target.parentNode.style.position;
+            target.parentNode.insertBefore(marker, target.nextSibling);
+          }
+        }
       }
     });
   }
