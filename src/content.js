@@ -33,6 +33,113 @@
   let hasAnalyzedCurrentPage = false;
 
   /**
+   * Diagnostic & In-Page Logger
+   */
+  const WayfinderLogger = {
+    logs: [],
+    log(msg, data) {
+      const timestamp = new Date().toLocaleTimeString();
+      const logStr = `[${timestamp}] ℹ️ ${msg}`;
+      this.logs.push(logStr);
+      if (this.logs.length > 100) this.logs.shift();
+      if (data !== undefined) {
+        console.log(`%c[Wayfinder AI]%c ${msg}`, "color: #7c3aed; font-weight: bold; background: #ede9fe; padding: 2px 5px; border-radius: 3px;", "color: inherit;", data);
+      } else {
+        console.log(`%c[Wayfinder AI]%c ${msg}`, "color: #7c3aed; font-weight: bold; background: #ede9fe; padding: 2px 5px; border-radius: 3px;", "color: inherit;");
+      }
+    },
+    warn(msg, data) {
+      const timestamp = new Date().toLocaleTimeString();
+      this.logs.push(`[${timestamp}] ⚠️ ${msg}`);
+      if (this.logs.length > 100) this.logs.shift();
+      console.warn(`[Wayfinder AI] ${msg}`, data || "");
+    },
+    error(msg, err) {
+      const timestamp = new Date().toLocaleTimeString();
+      this.logs.push(`[${timestamp}] ❌ ${msg}: ${err?.message || err}`);
+      if (this.logs.length > 100) this.logs.shift();
+      console.error(`[Wayfinder AI] ${msg}`, err || "");
+    }
+  };
+
+  WayfinderLogger.log(`Content script loaded on: ${window.location.href}`);
+
+  async function copyDiagnosticLogs() {
+    WayfinderLogger.log("Compiling diagnostic report for clipboard...");
+    let bgLogs = [];
+    let bgSettings = {};
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "GET_DEBUG_LOGS" });
+      if (res && res.logs) bgLogs = res.logs;
+      const s = await chrome.storage.local.get("wayfinder_settings");
+      bgSettings = s.wayfinder_settings || {};
+    } catch (e) {
+      WayfinderLogger.error("Failed to fetch background debug logs", e);
+    }
+
+    const domMarkers = Array.from(document.querySelectorAll(".wayfinder-dom-marker"));
+    const markerDetails = domMarkers.map((m, idx) => {
+      const parent = m.parentElement;
+      return `  ${idx + 1}. <${parent?.tagName.toLowerCase()}${parent?.id ? `#${parent.id}` : ''}${parent?.className ? `.${parent.className.split(' ').slice(0, 2).join('.')}` : ''}> -> Note: "${m.innerText.trim().slice(0, 60)}"`;
+    }).join("\n");
+
+    const activeProvider = bgSettings.activeProvider || "ollama";
+    const rawKey = bgSettings.apiKeys?.[activeProvider] || "";
+    const maskedKey = rawKey ? `${rawKey.slice(0, 7)}...${rawKey.slice(-5)}` : "None configured";
+
+    const report = [
+      "================ WAYFINDER AI DIAGNOSTIC REPORT ================",
+      `Generated At: ${new Date().toISOString()}`,
+      `Current URL: ${window.location.href}`,
+      `Page Title: ${document.title || "Untitled"}`,
+      `Domain: ${window.location.hostname}`,
+      `Detected E-Commerce: ${extractProductInfo() ? "YES (" + JSON.stringify(extractProductInfo()) + ")" : "NO"}`,
+      "",
+      "--- SETTINGS & AI CONFIGURATION ---",
+      `Enabled: ${bgSettings.enabled !== false}`,
+      `Active Provider: ${activeProvider}`,
+      `Configured Model: ${bgSettings.selectedModels?.[activeProvider] || "Default"}`,
+      `API Key: ${maskedKey}`,
+      `Endpoint: ${bgSettings.customEndpoints?.[activeProvider] || "Default"}`,
+      `Marker Style: ${currentMarkerStyle}`,
+      `Markers Enabled in Settings: ${bgSettings.domMarkersEnabled !== false}`,
+      "",
+      "--- ON-PAGE DOM MARKERS STATUS ---",
+      `Active Markers on Page: ${domMarkers.length}`,
+      markerDetails || "  (No markers currently rendered on DOM)",
+      "",
+      "--- RECENT IN-PAGE CONTENT SCRIPT LOGS ---",
+      WayfinderLogger.logs.slice(-25).join("\n") || "  (No content logs recorded)",
+      "",
+      "--- RECENT BACKGROUND AI WORKER LOGS ---",
+      bgLogs.slice(-3).map(l => `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.type} - Status: ${l.status}${l.error ? ` (Error: ${l.error})` : ''} - Provider: ${l.provider}`).join("\n") || "  (No background logs recorded)",
+      "================================================================"
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(report);
+      showInPageToast("✓ Diagnostic logs copied to clipboard! Paste them here.");
+      WayfinderLogger.log("Diagnostic report successfully written to clipboard.");
+    } catch (err) {
+      console.log(report);
+      alert("Diagnostic logs output to browser console (F12)!");
+    }
+  }
+
+  function showInPageToast(message) {
+    let toast = document.getElementById("wayfinder-inpage-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "wayfinder-inpage-toast";
+      toast.className = "wayfinder-inpage-toast";
+      (document.body || document.documentElement).appendChild(toast);
+    }
+    toast.innerText = message;
+    toast.classList.add("visible");
+    setTimeout(() => toast.classList.remove("visible"), 3500);
+  }
+
+  /**
    * 1. Extract context from DOM & Domain-specific detection
    */
   function extractProductInfo() {
@@ -165,6 +272,12 @@
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
             </svg>
           </button>
+          <button class="wayfinder-icon-btn" id="wayfinder-copy-logs-btn" title="Copy Diagnostic Logs for Debugging">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+            </svg>
+          </button>
           <button class="wayfinder-icon-btn" id="wayfinder-close-btn" title="Dismiss Panel">&times;</button>
         </div>
       </div>
@@ -255,6 +368,14 @@
       e.stopPropagation();
       runPageAnalysis(true);
     });
+
+    const copyLogsBtn = document.getElementById("wayfinder-copy-logs-btn");
+    if (copyLogsBtn) {
+      copyLogsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        copyDiagnosticLogs();
+      });
+    }
   }
 
   function updatePinUI() {
@@ -462,38 +583,47 @@
   }
 
   // Fallback heuristic markers so interesting items are highlighted immediately
-  function applyHeuristicDomMarkers() {
-    if (document.querySelector(".wayfinder-dom-marker")) return; // already marked
-
+  function getHeuristicDomCandidates() {
     const candidates = [];
     const seen = new Set();
 
     // 1. Domain-specific E-Commerce high-value elements (Amazon, BestBuy, Walmart, etc.)
     const ecomRules = [
       {
-        sel: "#priceblock_ourprice, #priceblock_dealprice, .a-price, #corePrice_feature_div, .price, [itemprop='price'], .product-price",
-        note: "Price Tracker: Check historical price trends or cheaper alternatives (⌘I)"
+        sel: "#corePriceDisplay_desktop_feature_div, #corePrice_feature_div, .priceToPay, .apexPriceToPay, #priceblock_ourprice, #priceblock_dealprice, #price, .product-price, [itemprop='price'], .a-price:not(.a-offscreen)",
+        note: "Price: Check historical price trends or cheaper alternatives (⌘I)"
       },
       {
-        sel: "#add-to-cart-button, #buy-now-button, input[name='submit.add-to-cart'], button.add-to-cart, [data-action='add-to-cart']",
+        sel: "#add-to-cart-button, #buy-now-button, #addToCart, #buyNow, input[name='submit.add-to-cart'], button.add-to-cart, #exportsUndeliverable-cart-announce",
         note: "Purchase Action: Compare seller ratings & return policies before buying"
       },
       {
-        sel: "#reviewsMedley, #averageCustomerReviews, #acrCustomerReviewText, .reviews, [data-hook='total-review-count']",
+        sel: "#acrCustomerReviewText, #averageCustomerReviews, #reviewsMedley, [data-hook='total-review-count']",
         note: "Customer Reviews: Ask Copilot (⌘I) to summarize sentiment & flaws"
       },
       {
-        sel: "#feature-bullets, #technicalSpecifications_section_1, .specs, .features",
+        sel: "#feature-bullets, #technicalSpecifications_section_1, #productOverview_feature_div, .specs, .features",
         note: "Specifications: Key product details and features"
       }
     ];
 
     for (const rule of ecomRules) {
       try {
-        const el = document.querySelector(rule.sel);
-        if (el && !seen.has(el) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
-          seen.add(el);
-          candidates.push({ element: el, note: rule.note });
+        const elements = Array.from(document.querySelectorAll(rule.sel));
+        for (let el of elements) {
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
+
+          // If target is inside an Amazon button container, attach to the outer visible button
+          const outerBtn = el.closest(".a-button");
+          if (outerBtn) el = outerBtn;
+
+          if (!seen.has(el) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
+            seen.add(el);
+            candidates.push({ element: el, note: rule.note });
+            break;
+          }
         }
       } catch (e) {}
     }
@@ -509,11 +639,17 @@
     for (const sel of selectors) {
       try {
         const elements = Array.from(document.querySelectorAll(sel));
-        for (const el of elements) {
+        for (let el of elements) {
           if (candidates.length >= 8) break;
+          if (!el) continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
+
+          const outerBtn = el.closest(".a-button");
+          if (outerBtn) el = outerBtn;
+
           if (seen.has(el) || el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover") || el.closest("#wayfinder-chat-root")) continue;
 
-          const rect = el.getBoundingClientRect();
           if (rect.width > 20 && rect.height > 15) {
             seen.add(el);
             candidates.push({
@@ -526,15 +662,33 @@
       if (candidates.length >= 8) break;
     }
 
+    return candidates;
+  }
+
+  function applyHeuristicDomMarkers() {
+    WayfinderLogger.log("Scanning DOM for candidates...");
+    const candidates = getHeuristicDomCandidates();
+    WayfinderLogger.log(`Found ${candidates.length} DOM candidates to mark.`);
     renderDomMarkers(candidates);
   }
 
   function renderDomMarkers(items) {
     clearDomMarkers();
-    if (!items || !items.length) return;
-    currentGuidanceItems = items;
 
-    items.forEach((item) => {
+    let effectiveItems = (items && items.length > 0) ? items : null;
+    if (!effectiveItems || effectiveItems.length === 0) {
+      WayfinderLogger.log("No specific guidance items provided, falling back to heuristic candidates...");
+      effectiveItems = getHeuristicDomCandidates();
+    }
+    if (!effectiveItems || !effectiveItems.length) {
+      WayfinderLogger.warn("No DOM elements found to render markers.");
+      return;
+    }
+
+    currentGuidanceItems = effectiveItems;
+    let attachedCount = 0;
+
+    effectiveItems.forEach((item) => {
       let target = item.element || null;
 
       if (!target && item.selector) {
@@ -548,6 +702,11 @@
           const text = (el.innerText || el.value || "").toLowerCase();
           return text.includes(hint.toLowerCase()) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root");
         });
+      }
+
+      if (target) {
+        const outerBtn = target.closest(".a-button");
+        if (outerBtn) target = outerBtn;
       }
 
       if (target && !target.closest("#wayfinder-hud-root") && !target.closest("#wayfinder-chat-root") && !target.querySelector(".wayfinder-dom-marker")) {
@@ -631,8 +790,15 @@
         if (computed.position === "static") {
           target.style.position = "relative";
         }
-        if (computed.overflow === "hidden") {
-          target.style.overflow = "visible";
+
+        // Un-clip parent containers (like Amazon's .a-button-inner or table cells)
+        let curr = target;
+        while (curr && curr !== document.body) {
+          const cs = window.getComputedStyle(curr);
+          if (cs.overflow === "hidden" || cs.overflowX === "hidden" || cs.overflowY === "hidden") {
+            curr.style.setProperty("overflow", "visible", "important");
+          }
+          curr = curr.parentElement;
         }
 
         // Avoid clipping if element is near top of viewport
@@ -644,15 +810,21 @@
         // Attach marker
         try {
           target.appendChild(marker);
+          attachedCount++;
+          WayfinderLogger.log(`Attached marker #${attachedCount} to <${target.tagName.toLowerCase()}>`, noteText);
         } catch (e) {
           // If element doesn't allow children (e.g. input), insert as sibling
           if (target.parentNode) {
             target.parentNode.style.position = target.parentNode.style.position === "static" ? "relative" : target.parentNode.style.position;
             target.parentNode.insertBefore(marker, target.nextSibling);
+            attachedCount++;
+            WayfinderLogger.log(`Attached marker #${attachedCount} as sibling to <${target.tagName.toLowerCase()}>`, noteText);
           }
         }
       }
     });
+
+    WayfinderLogger.log(`Finished rendering markers. Total attached: ${attachedCount}`);
   }
 
   /**
@@ -791,16 +963,33 @@
   }
 
   function renderErrorState(errorMessage) {
+    WayfinderLogger.error("Error State Triggered", errorMessage);
     const cardBody = document.getElementById("wayfinder-card-body");
+    const badge = document.getElementById("wayfinder-beacon-badge");
+    if (badge) {
+      badge.style.display = "block";
+      badge.textContent = "!";
+      badge.style.background = "#ef4444";
+    }
     if (!cardBody) return;
     cardBody.innerHTML = `
       <div class="wayfinder-error-state">
         <div class="wayfinder-error-icon">⚠️</div>
-        <div class="wayfinder-error-title">Notice</div>
+        <div class="wayfinder-error-title">AI Guidance Notice</div>
         <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
-        <p class="wayfinder-error-help">Click the extension icon in your Chrome toolbar to configure OpenAI, Claude, OpenRouter, or ensure local Ollama is active.</p>
+        <p class="wayfinder-error-help">Check your API key in the extension popup or verify provider settings.</p>
+        <button class="wayfinder-copy-logs-btn" id="wayfinder-copy-logs-err-btn" style="margin-top: 10px; background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px 12px; font-weight: 600; cursor: pointer;">
+          📋 Copy Diagnostic Logs
+        </button>
       </div>
     `;
+
+    const errCopyBtn = document.getElementById("wayfinder-copy-logs-err-btn");
+    if (errCopyBtn) {
+      errCopyBtn.addEventListener("click", () => {
+        copyDiagnosticLogs();
+      });
+    }
   }
 
   function escapeHtml(str) {
@@ -1119,9 +1308,23 @@
     }
   }, 1000);
 
-  // Trigger exactly 1 analysis per page load / refresh
+  // 1. Initial heuristic DOM scan at 400ms (Local DOM only, 0 network requests)
+  setTimeout(() => {
+    applyHeuristicDomMarkers();
+  }, 400);
+
+  // 2. Main Page Analysis at 1000ms (Exactly 1 network request per page load/refresh)
   setTimeout(() => {
     runPageAnalysis();
   }, 1000);
+
+  // 3. Post-hydration resilience check at 2800ms (Local DOM only, 0 network requests) to catch Amazon's late-rendered price & buy box
+  setTimeout(() => {
+    const activeMarkers = document.querySelectorAll(".wayfinder-dom-marker").length;
+    if (activeMarkers < 2) {
+      WayfinderLogger.log("Post-hydration resilience check: refreshing on-page markers...");
+      applyHeuristicDomMarkers();
+    }
+  }, 2800);
 
 })();

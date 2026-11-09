@@ -246,6 +246,47 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // Copy Diagnostics
+  const copyDiagnosticsPopupBtn = document.getElementById("copyDiagnosticsPopupBtn");
+  if (copyDiagnosticsPopupBtn) {
+    copyDiagnosticsPopupBtn.addEventListener("click", async () => {
+      let bgLogs = [];
+      try {
+        const res = await new Promise(resolve => chrome.runtime.sendMessage({ type: "GET_DEBUG_LOGS" }, resolve));
+        if (res && res.logs) bgLogs = res.logs;
+      } catch (e) {}
+
+      const { wayfinder_settings: curSettings = {} } = await chrome.storage.local.get("wayfinder_settings");
+      const activeProv = curSettings.activeProvider || "ollama";
+      const rawKey = curSettings.apiKeys?.[activeProv] || "";
+      const maskedKey = rawKey ? `${rawKey.slice(0, 7)}...${rawKey.slice(-5)}` : "None configured";
+
+      const report = [
+        "================ WAYFINDER AI DIAGNOSTIC REPORT ================",
+        `Generated At: ${new Date().toISOString()}`,
+        `Active Provider: ${activeProv}`,
+        `Model: ${curSettings.selectedModels?.[activeProv] || "Default"}`,
+        `API Key: ${maskedKey}`,
+        `Endpoint: ${curSettings.customEndpoints?.[activeProv] || "Default"}`,
+        `Marker Style: ${curSettings.markerStyle || "dot"}`,
+        `Markers Enabled: ${curSettings.domMarkersEnabled !== false}`,
+        `Master Extension Enabled: ${curSettings.enabled !== false}`,
+        "",
+        "--- RECENT BACKGROUND AI WORKER LOGS ---",
+        bgLogs.slice(-5).map(l => `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.type} - Status: ${l.status}${l.error ? ` (Error: ${l.error})` : ''} - Provider: ${l.provider}`).join("\n") || "  (No background logs recorded)",
+        "================================================================"
+      ].join("\n");
+
+      try {
+        await navigator.clipboard.writeText(report);
+        showToast("✓ Diagnostic logs copied to clipboard!");
+      } catch (err) {
+        console.log(report);
+        alert("Logs output to console!");
+      }
+    });
+  }
+
   // Reset metrics
   resetMetricsBtn.addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "RESET_METRICS" }, (res) => {

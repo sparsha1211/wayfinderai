@@ -269,6 +269,7 @@ Learned User Navigation Patterns:
 Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, links, headings) and provide clear navigation guidance.`;
 
   const startTime = Date.now();
+  console.log(`[Wayfinder Service Worker] Requesting page assistance for ${pageContext?.url} via ${providerId} (${model})`);
 
   try {
     const { data: guidance, usage } = await AIService.requestGuidance({
@@ -363,6 +364,7 @@ Keep formatting clean with bullet points and bold highlights. Keep response unde
 
   const userPrompt = `Page: ${pageTitle} (${pageUrl})\nSelected Text:\n"""\n${selectedText}\n"""`;
   const startTime = Date.now();
+  console.log(`[Wayfinder Service Worker] Requesting text analysis for ${pageUrl} via ${providerId} (${model})`);
 
   try {
     const { data, usage } = await AIService.requestGuidance({
@@ -459,6 +461,7 @@ User Question:
 "${query}"`;
 
   const startTime = Date.now();
+  console.log(`[Wayfinder Service Worker] Requesting chat copilot for ${pageContext?.url} via ${providerId} (${model})`);
 
   try {
     const { data, usage } = await AIService.requestGuidance({
