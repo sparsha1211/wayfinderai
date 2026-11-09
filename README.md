@@ -10,25 +10,43 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
    - In the popup, click **⚡ Test Connection** beside your API key and model config.
    - Instantly pings your selected provider (OpenAI, Claude, OpenRouter, Meta/Groq, Ollama, or Chrome Built-in AI) with real-time feedback (`✓ Connected successfully!` or clear error explanation).
 
-2. **Predictable Navigation Analysis (Exactly 1 Call per Page Load / Refresh)**:
-   - To conserve token usage and prevent unnecessary network calls, Wayfinder AI executes **strictly 1 AI analysis per page load / refresh**.
+2. **💬 In-Page Copilot Chatbox (`Cmd + I` / `Ctrl + I`)**:
+   - Press <kbd>Cmd + I</kbd> on macOS (or <kbd>Ctrl + I</kbd> on Windows/Linux) anytime, or click **"💬 Copilot"** in the HUD header.
+   - A modern in-page chat copilot appears directly over the webpage.
+   - Seamlessly ask questions using the active page context, inspect elements, or ask about highlighted text.
+   - Features quick-prompt suggestion chips (`"Is this price fair?"`, `"Cheaper elsewhere?"`, `"Summarize page"`, `"What should I click next?"`).
+
+3. **🛍️ Domain-Specific E-Commerce Intelligence (Amazon, BestBuy, Walmart, etc.)**:
+   - Specialized product recognition for Amazon and e-commerce shopping.
+   - Extracts product titles, price tags, ratings, review volumes, and buy box elements.
+   - In guidance recommendations and chat, offers critical insights: evaluates price-to-value, flags review sentiment & anomalies, and recommends checking historical price tools (CamelCamelCamel, Keepa, Google Shopping) or alternative merchants.
+
+4. **🟣 Marker Display Mode Toggle: Purple Dots vs. Direct Purple Boxes**:
+   - Toggle between two visualization styles on the fly:
+     - **Mode A (🟣 Dot Mode)**: Concentric pulsing purple beacon dots beside key action items. Hover or click to reveal the popover.
+     - **Mode B (🏷️ Direct Box Mode)**: Displays direct text insights immediately inside stylish purple callout boxes without needing to hover! Includes smart positioning and UX preservation to keep target buttons easily clickable.
+   - Toggle right from the HUD header (`🏷️ Text Boxes` / `🟣 Dots`) or in the popup settings under **Marker Display Mode**.
+
+5. **Predictable Navigation Analysis (Exactly 1 Call per Page Load / Refresh)**:
+   - To conserve token usage and prevent unexpected billing, Wayfinder AI executes **strictly 1 AI analysis per page load / refresh**.
    - It will not fire repetitive calls on background DOM mutations or AJAX updates.
    - When navigating to a new URL (including client-side SPA navigation), it resets and runs one clean guidance request for that new page.
    - You can manually trigger a fresh re-analysis anytime using the **🔄 refresh button** in the guidance card header.
 
-3. **In-Page DOM Purple Markers & 3 Modes of Interaction**:
+6. **In-Page DOM Purple Markers & 4 Modes of Interaction**:
    - **Mode 1 (Signal Beacon HUD)**: Floating bottom-right beacon. Hover to preview analysis; click to pin permanently.
-   - **Mode 2 (DOM Markers with Popovers)**: Glowing purple beacons beside key action elements. Click or hover on any marker for in-page contextual advice.
-   - **Mode 3 (Text Selection Copilot)**: Highlight text anywhere on the page and click *"Analyze with AI"* for an instant in-place explanation.
+   - **Mode 2 (DOM Markers & Callout Boxes)**: Highlighting key action elements with insights and direct *"Ask Copilot"* shortcuts.
+   - **Mode 3 (Text Selection Copilot)**: Highlight text anywhere on the page and click *"Analyze with AI"* or *"Discuss in Chat"*.
+   - **Mode 4 (Interactive Copilot Chatbox)**: Full interactive chat thread embedded on the page.
 
-4. **Metrics & 🛠️ Developer Debug Mode**:
+7. **Metrics & 🛠️ Developer Debug Mode**:
    - Live token and request tracking (Prompt tokens, completion tokens, breakdown by provider).
    - Toggle **Developer Debug Mode** in Settings to unlock the **"🛠️ Debug Logs"** tab:
      - Inspect exact roundtrip latency in milliseconds.
      - View exact prompt payloads sent to the AI.
      - View full raw JSON responses or error traces.
 
-5. **Local AI Support on macOS / Chrome**:
+8. **Local AI Support on macOS / Chrome**:
    - **Ollama**: Run `llama3.2`, `mistral`, or `qwen2.5` locally accelerated by your Mac's GPU/Metal unified memory (`OLLAMA_ORIGINS="*" ollama serve`).
    - **Chrome Built-in AI (Gemini Nano)**: Support for Chrome's native on-device model (`window.ai` / Prompt API).
 
@@ -91,10 +109,12 @@ npx playwright test --ui
 ### 4. What the Tests Verify (100% Pass Rate):
 - **`E2E-1` (Popup UI & Controls)**: Asserts extension loads properly in Chromium, validates brand header, master switch, and all navigation tabs.
 - **`E2E-2` (⚡ Test Connection)**: Validates that clicking "Test Connection" pings the background worker and returns live status feedback.
-- **`E2E-3` (Purple DOM Markers & HUD Injection)**: Confirms the floating HUD beacon is injected and that **glowing purple DOM markers** attach to primary buttons/links on the page with interactive hover popovers.
+- **`E2E-3` (Purple DOM Markers & HUD Injection)**: Confirms the floating HUD beacon is injected and that **glowing purple DOM markers** attach to primary buttons/links on the page.
 - **`E2E-4` (Guidance Card & Persistent Pinning)**: Asserts the beacon expands the guidance card on click and activates persistent pinned mode.
 - **`E2E-5` (Text Selection Copilot)**: Selects on-page text and asserts that the floating **"Analyze with AI"** pill appears immediately.
-- **`E2E-6` (Dynamic DOM & Route Mutation Observer)**: Adds dynamic content to the DOM and asserts that the MutationObserver debounces and updates in-page navigation context.
+- **`E2E-6` (Single Call Policy & DOM Mutation Handling)**: Adds dynamic content to the DOM and asserts single-call policy and marker retention.
+- **`E2E-7` (Cmd+I Interactive Copilot Chatbox)**: Verifies `Cmd+I` (and `Ctrl+I`) keyboard shortcut opens in-page chatbox, verifies prompt suggestion chips, and tests sending interactive contextual queries.
+- **`E2E-8` (Purple Dots vs. Direct Purple Box Toggle)**: Verifies instant toggling between pulsing purple dots and direct inline purple text boxes with smart positioning.
 
 ---
 

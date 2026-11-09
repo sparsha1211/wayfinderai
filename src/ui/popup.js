@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const endpointInput = document.getElementById("endpointInput");
   const endpointHint = document.getElementById("endpointHint");
   const domMarkersToggle = document.getElementById("domMarkersToggle");
+  const markerStyleSelect = document.getElementById("markerStyleSelect");
   const learnPatternsToggle = document.getElementById("learnPatternsToggle");
   const debugModeToggle = document.getElementById("debugModeToggle");
   const devTabBtn = document.getElementById("devTabBtn");
@@ -95,6 +96,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateStatusDisplay(isEnabled);
 
   domMarkersToggle.checked = settings.domMarkersEnabled !== false;
+  if (markerStyleSelect) {
+    markerStyleSelect.value = settings.markerStyle || "dot";
+  }
   learnPatternsToggle.checked = settings.learnPatterns !== false;
 
   // Debug mode toggle state
@@ -115,6 +119,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     const selected = e.target.value;
     updateProviderUI(selected, settings);
   });
+
+  // Live toggle for Marker Style
+  if (markerStyleSelect) {
+    markerStyleSelect.addEventListener("change", async (e) => {
+      const curr = await chrome.storage.local.get("wayfinder_settings");
+      const newSettings = curr.wayfinder_settings || {};
+      newSettings.markerStyle = e.target.value;
+      await chrome.storage.local.set({ wayfinder_settings: newSettings });
+      showToast(`Marker style: ${e.target.value === "badge" ? "Direct Purple Boxes" : "Purple Dots"}`);
+    });
+  }
 
   // Live toggle for Developer Debug Mode
   debugModeToggle.addEventListener("change", async (e) => {
@@ -200,6 +215,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     newSettings.activeProvider = provider;
     newSettings.domMarkersEnabled = domMarkersEnabled;
+    newSettings.markerStyle = markerStyleSelect ? markerStyleSelect.value : "dot";
     newSettings.learnPatterns = learnPatterns;
     newSettings.debugMode = debugMode;
     newSettings.apiKeys = newSettings.apiKeys || {};

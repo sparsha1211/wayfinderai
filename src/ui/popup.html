@@ -87,12 +87,24 @@
       <div class="toggle-option-card">
         <div class="option-info">
           <span class="option-title">In-Page Purple Markers</span>
-          <span class="option-desc">Highlight interesting buttons & links directly on the webpage with interactive hover popovers.</span>
+          <span class="option-desc">Highlight interesting buttons & links directly on the webpage.</span>
         </div>
         <label class="switch-sm">
           <input type="checkbox" id="domMarkersToggle" checked>
           <span class="slider round"></span>
         </label>
+      </div>
+
+      <!-- Setting: Marker Display Mode (Dots vs Direct Purple Boxes) -->
+      <div class="toggle-option-card">
+        <div class="option-info">
+          <span class="option-title">Marker Display Mode</span>
+          <span class="option-desc">Show pulsing purple dot (hover for popover) or direct purple box with text insight visible immediately.</span>
+        </div>
+        <select id="markerStyleSelect" class="form-select-sm" style="width: 130px; font-size: 11px; padding: 4px 6px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff;">
+          <option value="dot">🟣 Dot (Hover)</option>
+          <option value="badge">🏷️ Direct Box</option>
+        </select>
       </div>
 
       <!-- Setting: Local Pattern Learning -->

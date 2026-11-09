@@ -108,6 +108,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "CHAT_WITH_PAGE_CONTEXT") {
+    handleChatWithPageContext(message.payload)
+      .then(sendResponse)
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (message.type === "RECORD_PAGE_VISIT") {
     chrome.storage.local.get("wayfinder_settings").then(({ wayfinder_settings = {} }) => {
       if (wayfinder_settings.learnPatterns !== false) {
@@ -213,22 +220,27 @@ async function handlePageAssistance(pageContext) {
     patterns = await PatternLearner.getPatternContext();
   }
 
-  const systemPrompt = `You are Wayfinder AI, an intelligent web navigation co-pilot embedded into the user's browser.
-Your mission is to understand the user's current webpage context, their navigation habits, and guide them with high-value navigational next steps and page insights.
+  const systemPrompt = `You are Wayfinder AI, an intelligent web navigation & product copilot embedded in the browser.
+Your mission is to understand the webpage context (including e-commerce product pages like Amazon, BestBuy, eBay, Walmart, documentation, SaaS tools, and articles), and guide the user with high-value navigational advice, critical product insights, and element annotations.
+
+Special Domain Instructions:
+- If this is an E-COMMERCE page (e.g. Amazon, Walmart, BestBuy): Evaluate the product thoroughly. In your summary and recommendations, highlight price/value caveats, suggest if it can be found cheaper elsewhere or on alternative sites (or price tracker tools like CamelCamelCamel/Keepa), flag review rating anomalies or key specifications, and annotate buy/review/price elements.
+- If this is a DOCS/TECH page: Emphasize quickstarts, code samples, API tables, and versions.
+- If this is GENERAL CONTENT: Summarize core takeaway and primary action items.
 
 You MUST respond strictly with valid JSON conforming to this schema:
 {
-  "summary": "1-2 sentence executive summary of this page's purpose and status",
-  "pageGoal": "Inferred goal user likely has on this page (e.g. checkout, reading docs, comparing prices)",
+  "summary": "1-2 sentence executive summary of this page's purpose, status, or product overview",
+  "pageGoal": "Inferred goal user likely has on this page (e.g. 'Evaluating Sony Headphones Deal', 'Researching API docs')",
   "recommendations": [
-    "Concrete navigation tip or key element they should focus on",
+    "Concrete, high-value navigation or decision tip (e.g., 'Check price history on CamelCamelCamel or alternative seller before checkout')",
     "Secondary hint or shortcut relevant to their goal"
   ],
   "suggestedActions": [
     {
-      "label": "Action title (e.g., 'View Pricing Table' or 'Jump to API Docs')",
+      "label": "Action title (e.g., 'Inspect Customer Reviews & Ratings' or 'Compare Price Tables')",
       "type": "click" | "navigate" | "highlight",
-      "targetHint": "CSS selector or text hint of element to click/view (e.g. 'a[href*=\"pricing\"]' or text keyword)",
+      "targetHint": "CSS selector or text hint of element to click/view",
       "explanation": "Why this action is helpful"
     }
   ],
@@ -400,6 +412,102 @@ Keep formatting clean with bullet points and bold highlights. Keep response unde
       error: error.message,
       page: { title: pageTitle, url: pageUrl },
       request: { selectedText, systemPrompt, userPrompt }
+    });
+
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Handle interactive in-page chat with page & element context (Cmd+I)
+ */
+async function handleChatWithPageContext({ query, pageContext = {}, selectedText = "", chatHistory = [] }) {
+  const { wayfinder_settings } = await chrome.storage.local.get("wayfinder_settings");
+  if (!wayfinder_settings || !wayfinder_settings.enabled) {
+    return { success: false, disabled: true, error: "Wayfinder AI is currently paused/disabled." };
+  }
+
+  const providerId = wayfinder_settings.activeProvider || "ollama";
+  const apiKey = wayfinder_settings.apiKeys?.[providerId] || "";
+  const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
+  const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
+
+  const systemPrompt = `You are Wayfinder AI Copilot, a brilliant, interactive in-page browser assistant.
+You are directly embedded on this page with the user.
+Your role:
+- Answer questions accurately using the provided page context, title, metadata, interactive elements, and any selected text or product data.
+- E-COMMERCE INTELLIGENCE (Amazon, Walmart, BestBuy, eBay, etc.): If the user is viewing a product or asking about price/value, provide honest, critical insights: evaluate whether it's a good deal, recommend checking price tracker tools (like CamelCamelCamel, Keepa, Google Shopping), warn about potential counterfeit risks or inflated MSRP, summarize common user sentiment, and suggest cheaper or higher-rated alternatives if applicable.
+- Keep responses concise, direct, and well-structured using markdown bullets and bold highlights.
+- If the user asks about an element or action on the page, tell them clearly where to look or what to click.`;
+
+  let historyContext = "";
+  if (Array.isArray(chatHistory) && chatHistory.length > 0) {
+    historyContext = "\n\nPrevious Conversation:\n" + chatHistory.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join("\n");
+  }
+
+  const userPrompt = `Current Page Information:
+- Page Title: ${pageContext?.title || "Untitled"}
+- URL: ${pageContext?.url || "N/A"}
+- Domain: ${pageContext?.domain || "N/A"}
+${pageContext?.productInfo ? `- Detected Product Data: ${JSON.stringify(pageContext.productInfo)}` : ""}
+${selectedText ? `- User Highlighted / Selected Element: """${selectedText}"""` : ""}
+- Key Headings: ${JSON.stringify(pageContext?.headings || [])}
+- Condensed Page Text: ${pageContext?.condensedText ? pageContext.condensedText.slice(0, 1500) : "N/A"}
+${historyContext}
+
+User Question:
+"${query}"`;
+
+  const startTime = Date.now();
+
+  try {
+    const { data, usage } = await AIService.requestGuidance({
+      providerId,
+      apiKey,
+      endpoint,
+      model,
+      systemPrompt,
+      userPrompt,
+      responseFormat: "text"
+    });
+
+    const durationMs = Date.now() - startTime;
+    await recordMetrics(providerId, usage);
+
+    await logDebugEntry({
+      type: "CHAT_WITH_PAGE_CONTEXT",
+      status: "SUCCESS",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      usage,
+      page: { title: pageContext?.title, url: pageContext?.url },
+      request: { query, selectedText, systemPrompt, userPrompt },
+      response: data.text
+    });
+
+    return {
+      success: true,
+      provider: providerId,
+      model,
+      answer: data.text || "I was unable to generate a response for this query.",
+      usage
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    console.error("Wayfinder AI chat error:", error);
+
+    await logDebugEntry({
+      type: "CHAT_WITH_PAGE_CONTEXT",
+      status: "ERROR",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      error: error.message,
+      page: { title: pageContext?.title, url: pageContext?.url },
+      request: { query, selectedText, systemPrompt, userPrompt }
     });
 
     return { success: false, error: error.message };

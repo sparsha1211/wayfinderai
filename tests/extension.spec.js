@@ -171,4 +171,74 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await webPage.close();
   });
+
+  test('E2E-7: Cmd+I keyboard shortcut & header button open interactive copilot chatbox', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    const chatRoot = webPage.locator('#wayfinder-chat-root');
+    
+    // Press keyboard shortcut: Control+i / Meta+i
+    const isMac = process.platform === 'darwin';
+    await webPage.keyboard.press(isMac ? 'Meta+i' : 'Control+i');
+
+    await expect(chatRoot).toBeVisible({ timeout: 5000 });
+    await expect(chatRoot.locator('.wayfinder-chat-title')).toHaveText('Wayfinder AI Copilot');
+
+    // Verify quick prompt chips exist
+    const quickChips = chatRoot.locator('.wayfinder-quick-chip');
+    expect(await quickChips.count()).toBeGreaterThan(0);
+
+    // Enter a question in the chatbox
+    const chatInput = chatRoot.locator('#wayfinder-chat-input');
+    await chatInput.fill('What is this demonstration page?');
+    
+    const sendBtn = chatRoot.locator('#wayfinder-chat-send-btn');
+    await sendBtn.click();
+
+    // Verify user message bubble appeared in the thread
+    const userMsg = chatRoot.locator('.wayfinder-msg-user .wayfinder-msg-bubble');
+    await expect(userMsg.last()).toHaveText('What is this demonstration page?');
+
+    // Close chatbox using the close button
+    const closeBtn = chatRoot.locator('#wayfinder-chat-close');
+    await closeBtn.click();
+    await expect(chatRoot).not.toBeVisible();
+
+    await webPage.close();
+  });
+
+  test('E2E-8: Toggle between Purple Dots and Direct Purple Box (inline callouts)', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open beacon card to access style toggle
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    const styleToggleBtn = webPage.locator('#wayfinder-style-toggle-btn');
+    await expect(styleToggleBtn).toBeVisible({ timeout: 5000 });
+
+    // Click toggle to switch from Dots to Direct Boxes
+    await styleToggleBtn.click();
+
+    // Verify direct purple callout box is rendered
+    const calloutBox = webPage.locator('.wayfinder-marker-callout .wayfinder-callout-box');
+    await expect(calloutBox.first()).toBeVisible({ timeout: 5000 });
+    const calloutText = await calloutBox.first().innerText();
+    expect(calloutText.length).toBeGreaterThan(0);
+
+    // Click toggle again to switch back to Dots
+    await styleToggleBtn.click();
+    const dotMarker = webPage.locator('.wayfinder-marker-dot');
+    await expect(dotMarker.first()).toBeVisible({ timeout: 5000 });
+
+    await webPage.close();
+  });
 });
