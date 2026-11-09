@@ -552,10 +552,16 @@
         </details>
       ` : ""}
 
-      <div class="wayfinder-footer-provider">
+      <div class="wayfinder-footer-provider" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Powered by <strong>${escapeHtml(provider)}</strong> (${escapeHtml(model)})</span>
+        <button class="wayfinder-copy-logs-btn" id="wayfinder-copy-logs-hud-btn" style="background: rgba(255, 255, 255, 0.15); color: #c4b5fd; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; padding: 2px 7px; font-size: 10px; cursor: pointer;">📋 Copy Logs</button>
       </div>
     `;
+
+    const hudCopyBtn = cardBody.querySelector("#wayfinder-copy-logs-hud-btn");
+    if (hudCopyBtn) {
+      hudCopyBtn.addEventListener("click", () => copyDiagnosticLogs());
+    }
 
     const dealsBtn = cardBody.querySelector("#wayfinder-product-deals-btn");
     if (dealsBtn && productInfo) {
