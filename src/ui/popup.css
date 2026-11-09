@@ -10,6 +10,8 @@
   --text-muted: #64748b;
   --success: #10b981;
   --danger: #ef4444;
+  --code-bg: #0f172a;
+  --code-text: #38bdf8;
 }
 
 * {
@@ -19,8 +21,8 @@
 }
 
 body {
-  width: 380px;
-  min-height: 490px;
+  width: 400px;
+  min-height: 520px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg);
   color: var(--text);
@@ -31,7 +33,7 @@ body {
 .popup-container {
   display: flex;
   flex-direction: column;
-  min-height: 490px;
+  min-height: 520px;
 }
 
 /* Header */
@@ -148,15 +150,17 @@ input:checked + .slider:before {
 
 .tab-btn {
   flex: 1;
-  padding: 8px 10px;
+  padding: 7px 6px;
   border: none;
   background: transparent;
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11.5px;
   cursor: pointer;
   border-radius: 6px;
   transition: all 0.15s ease;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .tab-btn.active {
@@ -165,12 +169,23 @@ input:checked + .slider:before {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+.tab-btn.dev-tab {
+  color: #7c3aed;
+  background: #ede9fe;
+}
+
+.tab-btn.dev-tab.active {
+  background: #6d28d9;
+  color: #ffffff;
+}
+
 /* Tab Contents */
 .tab-content {
   display: none;
   padding: 16px 18px;
   flex: 1;
   overflow-y: auto;
+  max-height: 440px;
 }
 
 .tab-content.active {
@@ -254,6 +269,11 @@ input:checked + .slider:before {
   margin-bottom: 8px;
 }
 
+.toggle-option-card.dev-card {
+  border-color: #c4b5fd;
+  background: #faf5ff;
+}
+
 .option-info {
   display: flex;
   flex-direction: column;
@@ -315,6 +335,19 @@ input:checked + .slider:before {
 }
 
 .btn-secondary-sm:hover {
+  background: #e2e8f0;
+}
+
+.btn-icon-subtle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.btn-icon-subtle:hover {
   background: #e2e8f0;
 }
 
@@ -412,8 +445,139 @@ input:checked + .slider:before {
 }
 
 /* =========================================================================
-   TAB 3: GUIDE STYLING
+   TAB 4: DEVELOPER DEBUG LOGS
    ========================================================================= */
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.debug-badge {
+  background: #6d28d9;
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.debug-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.debug-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.debug-logs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.debug-log-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 11.5px;
+}
+
+.debug-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.debug-log-status {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.debug-log-status.status-SUCCESS {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.debug-log-status.status-ERROR {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.debug-log-title {
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-log-time {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.debug-log-details {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debug-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  font-size: 11px;
+  color: #475569;
+}
+
+.debug-label {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.debug-code-block {
+  background: var(--code-bg);
+  color: #f8fafc;
+  font-family: monospace;
+  font-size: 10.5px;
+  padding: 8px;
+  border-radius: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.debug-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 30px 10px;
+  font-style: italic;
+}
+
+/* Guide Styling */
 .guide-card {
   display: flex;
   flex-direction: column;

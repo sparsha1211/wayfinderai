@@ -1,6 +1,6 @@
 /**
  * Wayfinder AI Popup UI Controller
- * Handles provider configuration, metrics monitoring, DOM marker toggle, and habit controls.
+ * Handles provider configuration, metrics monitoring, developer debug inspector, DOM markers, and habit controls.
  */
 
 import { PROVIDERS } from "../services/aiProviders.js";
@@ -18,6 +18,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const endpointHint = document.getElementById("endpointHint");
   const domMarkersToggle = document.getElementById("domMarkersToggle");
   const learnPatternsToggle = document.getElementById("learnPatternsToggle");
+  const debugModeToggle = document.getElementById("debugModeToggle");
+  const devTabBtn = document.getElementById("devTabBtn");
   const saveSettingsBtn = document.getElementById("saveSettingsBtn");
   const clearHistoryBtn = document.getElementById("clearHistoryBtn");
   const statusToast = document.getElementById("statusToast");
@@ -32,6 +34,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const lastCallMetric = document.getElementById("lastCallMetric");
   const providerBreakdownList = document.getElementById("providerBreakdownList");
   const resetMetricsBtn = document.getElementById("resetMetricsBtn");
+
+  // Debug elements
+  const debugLogsContainer = document.getElementById("debugLogsContainer");
+  const refreshDebugLogsBtn = document.getElementById("refreshDebugLogsBtn");
+  const clearDebugLogsBtn = document.getElementById("clearDebugLogsBtn");
 
   // Tab Switching
   const tabButtons = document.querySelectorAll(".tab-btn");
@@ -48,19 +55,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (btn.getAttribute("data-tab") === "tab-metrics") {
         loadMetrics();
       }
+      if (btn.getAttribute("data-tab") === "tab-debug") {
+        loadDebugLogs();
+      }
     });
   });
 
-  // Always load metrics on startup so tab count is fresh
+  // Always load initial metrics
   loadMetrics();
 
-  // Auto-refresh metrics every 2 seconds if user stays on popup
+  // Auto-refresh active tab every 2 seconds
   setInterval(() => {
     const activeTab = document.querySelector(".tab-btn.active");
-    if (activeTab && activeTab.getAttribute("data-tab") === "tab-metrics") {
+    if (!activeTab) return;
+    const tabId = activeTab.getAttribute("data-tab");
+    if (tabId === "tab-metrics") {
       loadMetrics();
+    } else if (tabId === "tab-debug") {
+      loadDebugLogs();
     }
-  }, 2000);
+  }, 2500);
 
   // Toggle API key reveal
   toggleKeyVisibility.addEventListener("click", () => {
@@ -83,6 +97,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   domMarkersToggle.checked = settings.domMarkersEnabled !== false;
   learnPatternsToggle.checked = settings.learnPatterns !== false;
 
+  // Debug mode toggle state
+  const isDebug = !!settings.debugMode;
+  debugModeToggle.checked = isDebug;
+  devTabBtn.style.display = isDebug ? "block" : "none";
+
   const activeProvider = settings.activeProvider || "ollama";
   providerSelect.value = activeProvider;
 
@@ -92,6 +111,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   providerSelect.addEventListener("change", (e) => {
     const selected = e.target.value;
     updateProviderUI(selected, settings);
+  });
+
+  // Live toggle for Developer Debug Mode
+  debugModeToggle.addEventListener("change", async (e) => {
+    const isDev = e.target.checked;
+    devTabBtn.style.display = isDev ? "block" : "none";
+    if (isDev) {
+      showToast("🛠️ Developer Debug Mode Enabled! Debug tab unlocked.");
+    }
   });
 
   // Master Toggle listener
@@ -112,6 +140,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const endpoint = endpointInput.value.trim();
     const domMarkersEnabled = domMarkersToggle.checked;
     const learnPatterns = learnPatternsToggle.checked;
+    const debugMode = debugModeToggle.checked;
 
     const curr = await chrome.storage.local.get("wayfinder_settings");
     const newSettings = curr.wayfinder_settings || { apiKeys: {}, customEndpoints: {}, selectedModels: {} };
@@ -119,6 +148,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     newSettings.activeProvider = provider;
     newSettings.domMarkersEnabled = domMarkersEnabled;
     newSettings.learnPatterns = learnPatterns;
+    newSettings.debugMode = debugMode;
     newSettings.apiKeys = newSettings.apiKeys || {};
     newSettings.customEndpoints = newSettings.customEndpoints || {};
     newSettings.selectedModels = newSettings.selectedModels || {};
@@ -134,6 +164,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await chrome.storage.local.set({ wayfinder_settings: newSettings });
+    devTabBtn.style.display = debugMode ? "block" : "none";
     showToast("Preferences & AI settings saved!");
   });
 
@@ -153,6 +184,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         showToast("Metrics counter reset to zero.");
         loadMetrics();
       }
+    });
+  });
+
+  // Refresh & Clear Debug Logs
+  refreshDebugLogsBtn.addEventListener("click", () => {
+    loadDebugLogs();
+    showToast("Debug logs refreshed.");
+  });
+
+  clearDebugLogsBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "CLEAR_DEBUG_LOGS" }, () => {
+      loadDebugLogs();
+      showToast("Debug logs cleared.");
     });
   });
 
@@ -225,6 +269,57 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
       providerBreakdownList.innerHTML = `<span class="empty-state">No calls recorded yet.</span>`;
     }
+  }
+
+  // Load and render Developer Debug Logs
+  async function loadDebugLogs() {
+    chrome.runtime.sendMessage({ type: "GET_DEBUG_LOGS" }, (res) => {
+      if (!res || !res.success || !res.logs || res.logs.length === 0) {
+        debugLogsContainer.innerHTML = `<div class="debug-empty">No requests recorded yet. Browse any webpage to generate traffic.</div>`;
+        return;
+      }
+
+      debugLogsContainer.innerHTML = res.logs.map(log => {
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const statusClass = `status-${log.status}`;
+        const duration = log.durationMs ? `${log.durationMs}ms` : "-";
+
+        return `
+          <div class="debug-log-card">
+            <div class="debug-log-header">
+              <span class="debug-log-status ${statusClass}">${log.status}</span>
+              <span class="debug-log-title" title="${escapeHtml(log.page?.url || log.type)}">${escapeHtml(log.page?.title || log.type)}</span>
+              <span class="debug-log-time">${time}</span>
+            </div>
+            <div class="debug-log-details">
+              <div class="debug-meta-grid">
+                <div><strong>Provider:</strong> ${escapeHtml(log.provider)} (${escapeHtml(log.model)})</div>
+                <div><strong>Latency:</strong> ${duration}</div>
+                <div><strong>Tokens:</strong> In: ${log.usage?.promptTokens || 0} | Out: ${log.usage?.completionTokens || 0}</div>
+                <div><strong>Target Domain:</strong> ${escapeHtml(log.page?.domain || "-")}</div>
+              </div>
+
+              ${log.error ? `
+                <div>
+                  <div class="debug-label" style="color: #ef4444;">Error Message:</div>
+                  <pre class="debug-code-block" style="color: #fca5a5;">${escapeHtml(log.error)}</pre>
+                </div>
+              ` : ""}
+
+              <div>
+                <div class="debug-label">Payload Sent to AI (Prompt Context):</div>
+                <pre class="debug-code-block">${escapeHtml(log.request?.userPrompt || JSON.stringify(log.request, null, 2))}</pre>
+              </div>
+
+              <div>
+                <div class="debug-label">Raw AI Response:</div>
+                <pre class="debug-code-block">${escapeHtml(typeof log.response === 'object' ? JSON.stringify(log.response, null, 2) : log.response)}</pre>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    });
   }
 
   function escapeHtml(str) {

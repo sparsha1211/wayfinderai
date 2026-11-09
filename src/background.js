@@ -1,6 +1,6 @@
 /**
  * Wayfinder AI Background Service Worker
- * Coordinates AI requests, metrics tracking, pattern learning, and DOM communication.
+ * Coordinates AI requests, metrics tracking, developer debugging logs, pattern learning, and DOM communication.
  */
 
 import { AIService, PROVIDERS } from "./services/aiProviders.js";
@@ -25,8 +25,9 @@ const DEFAULT_SETTINGS = {
     meta: "llama-3.1-8b-instant",
     ollama: "llama3.2:latest"
   },
-  domMarkersEnabled: true, // Setting to update HTML DOM with purple markers on interesting items
-  learnPatterns: true      // Setting to track user workflows locally
+  domMarkersEnabled: true, // In-page DOM purple markers
+  learnPatterns: true,     // User navigation habit learning
+  debugMode: false         // Developer debug mode (request/response inspector)
 };
 
 const DEFAULT_METRICS = {
@@ -38,18 +39,23 @@ const DEFAULT_METRICS = {
   providerBreakdown: {}
 };
 
+const MAX_DEBUG_LOGS = 30;
+
 // Initialize default settings & metrics on install
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.local.get(["wayfinder_settings", "wayfinder_metrics"]);
+  const current = await chrome.storage.local.get(["wayfinder_settings", "wayfinder_metrics", "wayfinder_debug_logs"]);
   if (!current.wayfinder_settings) {
     await chrome.storage.local.set({ wayfinder_settings: DEFAULT_SETTINGS });
   }
   if (!current.wayfinder_metrics) {
     await chrome.storage.local.set({ wayfinder_metrics: DEFAULT_METRICS });
   }
+  if (!current.wayfinder_debug_logs) {
+    await chrome.storage.local.set({ wayfinder_debug_logs: [] });
+  }
 });
 
-// Update metrics helper
+// Record Metrics Helper
 async function recordMetrics(providerId, usage) {
   const data = await chrome.storage.local.get("wayfinder_metrics");
   const metrics = data.wayfinder_metrics || { ...DEFAULT_METRICS };
@@ -65,6 +71,18 @@ async function recordMetrics(providerId, usage) {
 
   await chrome.storage.local.set({ wayfinder_metrics: metrics });
   return metrics;
+}
+
+// Log Developer Debug Entry
+async function logDebugEntry(entry) {
+  const { wayfinder_debug_logs = [] } = await chrome.storage.local.get("wayfinder_debug_logs");
+  const newLog = {
+    id: "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+    timestamp: Date.now(),
+    ...entry
+  };
+  const updatedLogs = [newLog, ...wayfinder_debug_logs].slice(0, MAX_DEBUG_LOGS);
+  await chrome.storage.local.set({ wayfinder_debug_logs: updatedLogs });
 }
 
 // Message dispatcher
@@ -93,6 +111,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true, skipped: true });
       }
     });
+    return true;
+  }
+
+  if (message.type === "GET_DEBUG_LOGS") {
+    chrome.storage.local.get("wayfinder_debug_logs").then(({ wayfinder_debug_logs = [] }) => {
+      sendResponse({ success: true, logs: wayfinder_debug_logs });
+    });
+    return true;
+  }
+
+  if (message.type === "CLEAR_DEBUG_LOGS") {
+    chrome.storage.local.set({ wayfinder_debug_logs: [] })
+      .then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
@@ -132,7 +164,6 @@ async function handlePageAssistance(pageContext) {
   const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
   const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
 
-  // Pattern context if enabled
   let patterns = { topDomains: [], topInterests: [], frequentWorkflows: [], recentTrail: [] };
   if (wayfinder_settings.learnPatterns !== false) {
     patterns = await PatternLearner.getPatternContext();
@@ -181,6 +212,8 @@ Learned User Navigation Patterns:
 
 Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, links, headings) and provide clear navigation guidance.`;
 
+  const startTime = Date.now();
+
   try {
     const { data: guidance, usage } = await AIService.requestGuidance({
       providerId,
@@ -192,7 +225,29 @@ Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, l
       responseFormat: "json"
     });
 
+    const durationMs = Date.now() - startTime;
     await recordMetrics(providerId, usage);
+
+    // Save debug log if debug mode enabled or recent
+    await logDebugEntry({
+      type: "PAGE_NAVIGATION_ANALYSIS",
+      status: "SUCCESS",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      usage,
+      page: {
+        title: pageContext.title,
+        url: pageContext.url,
+        domain: pageContext.domain
+      },
+      request: {
+        systemPrompt,
+        userPrompt
+      },
+      response: guidance
+    });
 
     return {
       success: true,
@@ -203,7 +258,28 @@ Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, l
       domMarkersEnabled: wayfinder_settings.domMarkersEnabled !== false
     };
   } catch (error) {
+    const durationMs = Date.now() - startTime;
     console.error("Wayfinder AI guidance error:", error);
+
+    await logDebugEntry({
+      type: "PAGE_NAVIGATION_ANALYSIS",
+      status: "ERROR",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      error: error.message,
+      page: {
+        title: pageContext.title,
+        url: pageContext.url,
+        domain: pageContext.domain
+      },
+      request: {
+        systemPrompt,
+        userPrompt
+      }
+    });
+
     return { success: false, error: error.message };
   }
 }
@@ -230,6 +306,7 @@ Provide a clear, high-density analysis:
 Keep formatting clean with bullet points and bold highlights. Keep response under 120 words.`;
 
   const userPrompt = `Page: ${pageTitle} (${pageUrl})\nSelected Text:\n"""\n${selectedText}\n"""`;
+  const startTime = Date.now();
 
   try {
     const { data, usage } = await AIService.requestGuidance({
@@ -242,7 +319,21 @@ Keep formatting clean with bullet points and bold highlights. Keep response unde
       responseFormat: "text"
     });
 
+    const durationMs = Date.now() - startTime;
     await recordMetrics(providerId, usage);
+
+    await logDebugEntry({
+      type: "TEXT_SELECTION_ANALYSIS",
+      status: "SUCCESS",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      usage,
+      page: { title: pageTitle, url: pageUrl },
+      request: { selectedText, systemPrompt, userPrompt },
+      response: data.text
+    });
 
     return {
       success: true,
@@ -252,7 +343,21 @@ Keep formatting clean with bullet points and bold highlights. Keep response unde
       usage
     };
   } catch (error) {
+    const durationMs = Date.now() - startTime;
     console.error("Wayfinder AI selection analysis error:", error);
+
+    await logDebugEntry({
+      type: "TEXT_SELECTION_ANALYSIS",
+      status: "ERROR",
+      provider: providerId,
+      model,
+      endpoint,
+      durationMs,
+      error: error.message,
+      page: { title: pageTitle, url: pageUrl },
+      request: { selectedText, systemPrompt, userPrompt }
+    });
+
     return { success: false, error: error.message };
   }
 }

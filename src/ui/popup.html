@@ -34,6 +34,8 @@
       <button class="tab-btn active" data-tab="tab-settings">Settings & AI</button>
       <button class="tab-btn" data-tab="tab-metrics">Metrics & Usage</button>
       <button class="tab-btn" data-tab="tab-about">Guide</button>
+      <!-- Dev Mode Tab (Only visible when Debug Mode is turned ON) -->
+      <button class="tab-btn dev-tab" id="devTabBtn" data-tab="tab-debug" style="display:none;">🛠️ Debug Logs</button>
     </nav>
 
     <!-- TAB 1: AI Provider & Core Settings -->
@@ -99,6 +101,20 @@
         </label>
       </div>
 
+      <div class="section-label" style="margin-top: 16px;">Developer Tools</div>
+
+      <!-- Setting: Developer Debug Mode Toggle -->
+      <div class="toggle-option-card dev-card">
+        <div class="option-info">
+          <span class="option-title">🛠️ Developer Debug Mode</span>
+          <span class="option-desc">Enable inspectable request/response payloads, timing, endpoints, and error traces.</span>
+        </div>
+        <label class="switch-sm">
+          <input type="checkbox" id="debugModeToggle">
+          <span class="slider round"></span>
+        </label>
+      </div>
+
       <!-- Compact Pattern Reset inside Settings -->
       <div class="settings-action-row">
         <button id="clearHistoryBtn" class="btn btn-secondary-sm">Clear Learned History</button>
@@ -149,7 +165,7 @@
       </div>
     </section>
 
-    <!-- TAB 3: 3 Ways of Interaction Guide -->
+    <!-- TAB 3: Guide -->
     <section id="tab-about" class="tab-content">
       <div class="guide-card">
         <div class="guide-step">
@@ -178,13 +194,31 @@
       </div>
     </section>
 
+    <!-- TAB 4: Developer Debug Mode Panel (Visible only when dev mode is active) -->
+    <section id="tab-debug" class="tab-content">
+      <div class="debug-header">
+        <div class="debug-header-text">
+          <span class="debug-badge">DEV CONSOLE</span>
+          <span class="debug-subtitle">Live Request & Response Inspector</span>
+        </div>
+        <div class="debug-header-actions">
+          <button id="refreshDebugLogsBtn" class="btn-icon-subtle" title="Refresh Logs">🔄</button>
+          <button id="clearDebugLogsBtn" class="btn-icon-subtle" title="Clear All Logs">🗑️</button>
+        </div>
+      </div>
+
+      <div id="debugLogsContainer" class="debug-logs-container">
+        <div class="debug-empty">No requests recorded yet. Browse any webpage to generate traffic.</div>
+      </div>
+    </section>
+
     <!-- Footer Status -->
     <footer class="footer">
       <span class="status-indicator" id="statusIndicator">
         <span class="indicator-dot active"></span>
         <span id="statusText">Wayfinder AI Active</span>
       </span>
-      <span class="version">v1.1.0</span>
+      <span class="version">v1.2.0-dev</span>
     </footer>
   </div>
 

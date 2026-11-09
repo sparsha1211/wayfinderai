@@ -1,6 +1,6 @@
 # Wayfinder AI - Smart Web Navigation AI Assistant (Chrome Extension)
 
-A lightweight, professional Chrome Extension (Manifest V3) that acts as an intelligent in-page co-pilot for web navigation. Wayfinder AI features 3 distinct interaction modes, in-page DOM marker overlays, text-selection AI explanations, detailed usage/token metrics, and privacy-first local settings.
+A lightweight, professional Chrome Extension (Manifest V3) that acts as an intelligent in-page co-pilot for web navigation. Wayfinder AI features 3 distinct interaction modes, in-page DOM marker overlays, text-selection AI explanations, detailed usage/token metrics, and a dedicated **Developer Debug Mode** for inspecting raw requests and responses.
 
 ---
 
@@ -15,7 +15,7 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
 2. **In-Page DOM Purple Markers (Toggleable in Settings)**:
    - When enabled, Wayfinder identifies interesting items on the page (key buttons, primary links, actions).
    - Injects animated purple beacon markers directly beside those DOM elements.
-   - **Hovering over any marker** reveals an instant contextual advice tooltip.
+   - **Hovering or clicking on any marker** reveals an instant contextual advice tooltip.
 
 3. **In-Page Text Selection AI Copilot**:
    - Highlight any text or sentence on any webpage.
@@ -25,11 +25,17 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
 4. **Metrics & Token Usage Dashboard**:
    - Track **Total AI Calls Made**, **Total Tokens**, **Input/Prompt Tokens**, and **Output/Completion Tokens**.
    - View per-provider request breakdown (e.g., Ollama vs. OpenAI vs. Claude).
-   - One-click metrics counter reset.
+   - Real-time updates with one-click counter reset.
 
-5. **Consolidated Privacy & Pattern Settings**:
-   - Navigation habit learning is now integrated directly into the main Settings tab (can be enabled/disabled or wiped with a single click).
-   - No separate pattern dashboard cluttering the UI.
+5. **🛠️ Developer Debug Mode (Inspector Panel)**:
+   - Toggle **Developer Debug Mode** in the Settings tab.
+   - Unlocks a dedicated **"🛠️ Debug Logs"** console tab in the popup.
+   - Inspect:
+     - Exact latency / duration in milliseconds.
+     - Prompt payloads sent to the AI (DOM context, headings, interactive elements).
+     - Full raw responses or exact HTTP error messages.
+     - Token counts per call.
+     - One-click log refresh and purge controls.
 
 ---
 
@@ -39,20 +45,17 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
 ai_assist_chrome/
 ├── manifest.json                  # Manifest V3 extension configuration
 ├── icons/                         # 16px, 48px, 128px extension icons
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
 ├── src/
-│   ├── background.js              # Service worker (AI dispatch, token & call metrics)
+│   ├── background.js              # Service worker (AI dispatch, debug logs, metrics)
 │   ├── content.js                 # Content script (HUD, DOM markers, Text selection)
 │   ├── content.css                # Styling for beacon, cards, DOM markers, and selection popovers
 │   ├── services/
 │   │   ├── aiProviders.js         # Provider integrations + Token usage parsers
 │   │   └── patternLearner.js      # Local history & workflow pattern learner
 │   └── ui/
-│       ├── popup.html             # Control center UI (Settings, Metrics Dashboard, Guide)
-│       ├── popup.css              # Clean, modern popup design
-│       └── popup.js               # Settings & Metrics sync controller
+│       ├── popup.html             # Control center UI (Settings, Metrics, Guide, Dev Console)
+│       ├── popup.css              # Clean, modern popup design with dev console styles
+│       └── popup.js               # Settings, Metrics & Debug Logs controller
 └── README.md                      # Documentation & installation guide
 ```
 
@@ -65,8 +68,9 @@ ai_assist_chrome/
    chrome://extensions/
    ```
 2. Enable **Developer mode** in the top right corner.
-3. Click **Load unpacked** (or click the reload icon on Wayfinder AI if already loaded) and select this folder (`/Volumes/Workspace/ai_assist_chrome`).
-4. Click the Wayfinder AI toolbar icon to verify your active provider (defaults to Ollama) and view your live metrics!
+3. Click the **Reload** button on the Wayfinder AI card.
+4. Click the Wayfinder AI toolbar icon to open settings.
+5. Toggle **Developer Debug Mode** ON to unlock the **🛠️ Debug Logs** tab and inspect live requests!
 
 ---
 
