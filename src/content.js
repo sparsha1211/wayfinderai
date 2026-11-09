@@ -33,10 +33,10 @@
     const headings = headingElements.map(h => h.innerText.trim()).filter(Boolean);
 
     const actionElements = [];
-    document.querySelectorAll("button, a.btn, a.button, input[type='submit'], [role='button']").forEach((el, idx) => {
-      if (idx < 12) {
+    document.querySelectorAll("button, a.btn, a.button, input[type='submit'], [role='button'], nav a").forEach((el, idx) => {
+      if (idx < 15) {
         const text = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
-        if (text && text.length < 50) {
+        if (text && text.length < 50 && !el.closest("#wayfinder-hud-root")) {
           actionElements.push({
             text,
             tag: el.tagName.toLowerCase(),
@@ -49,7 +49,7 @@
     const clone = document.body ? document.body.cloneNode(true) : null;
     let condensedText = "";
     if (clone) {
-      clone.querySelectorAll("script, style, noscript, svg, nav, footer, header, #wayfinder-hud-root, #wayfinder-selection-btn, #wayfinder-selection-popover").forEach(node => node.remove());
+      clone.querySelectorAll("script, style, noscript, svg, nav, footer, header, #wayfinder-hud-root, #wayfinder-selection-btn, #wayfinder-selection-popover, .wayfinder-dom-marker").forEach(node => node.remove());
       condensedText = (clone.innerText || "")
         .replace(/\s+/g, " ")
         .trim()
@@ -69,10 +69,7 @@
   }
 
   /**
-   * 2. Initialize HUD with robust hover & pin logic
-   * User can hover over beacon -> panel appears.
-   * If mouse leaves both beacon AND panel -> panel closes after a short buffer.
-   * User can click the beacon or pin icon to keep it open permanently.
+   * 2. Initialize HUD
    */
   function injectBeaconHUD() {
     if (document.getElementById("wayfinder-hud-root")) return;
@@ -131,29 +128,25 @@
     beaconContainer.appendChild(overlayCard);
     document.body.appendChild(beaconContainer);
 
-    // Opening & Dismissal handlers
     function openCard() {
       clearTimeout(closeTimer);
       overlayCard.classList.add("wayfinder-card-open");
     }
 
     function scheduleClose() {
-      if (isCardPinned) return; // Do not close if pinned
+      if (isCardPinned) return;
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => {
         overlayCard.classList.remove("wayfinder-card-open");
-      }, 350); // Generous buffer so moving mouse between beacon and card is seamless
+      }, 350);
     }
 
-    // Beacon hover events
     beacon.addEventListener("mouseenter", openCard);
     beacon.addEventListener("mouseleave", scheduleClose);
 
-    // Overlay Card hover events (crucial: entering the panel keeps it alive!)
     overlayCard.addEventListener("mouseenter", openCard);
     overlayCard.addEventListener("mouseleave", scheduleClose);
 
-    // Beacon click toggles persistent pinned state
     beacon.addEventListener("click", (e) => {
       e.stopPropagation();
       isCardPinned = !isCardPinned;
@@ -165,7 +158,6 @@
       }
     });
 
-    // Pin button in card header
     document.getElementById("wayfinder-pin-btn").addEventListener("click", (e) => {
       e.stopPropagation();
       isCardPinned = !isCardPinned;
@@ -210,6 +202,11 @@
     injectBeaconHUD();
     isAnalyzing = true;
 
+    // Place initial DOM markers so user sees interesting interactable items right away
+    if (settings.domMarkersEnabled !== false) {
+      applyHeuristicDomMarkers();
+    }
+
     const cardBody = document.getElementById("wayfinder-card-body");
     if (cardBody) {
       cardBody.innerHTML = `
@@ -222,7 +219,6 @@
 
     const context = extractPageContext();
 
-    // Log visit for patterns if enabled
     chrome.runtime.sendMessage({
       type: "RECORD_PAGE_VISIT",
       payload: {
@@ -248,7 +244,6 @@
 
       renderGuidanceContent(response.guidance, response.provider, response.model);
 
-      // Render in-page DOM markers if setting enabled
       if (response.domMarkersEnabled !== false && settings.domMarkersEnabled !== false) {
         renderDomMarkers(response.guidance.domHighlights || response.guidance.suggestedActions || []);
       } else {
@@ -338,28 +333,46 @@
   }
 
   /**
-   * 5. IN-PAGE DOM MARKERS: Purple beacon markers on interesting items with hover popover
+   * 5. IN-PAGE DOM MARKERS: Purple beacon markers on interesting items with hover & click popovers
    */
   function clearDomMarkers() {
     document.querySelectorAll(".wayfinder-dom-marker").forEach(el => el.remove());
+  }
+
+  // Fallback heuristic markers so interesting items are highlighted immediately
+  function applyHeuristicDomMarkers() {
+    if (document.querySelector(".wayfinder-dom-marker")) return; // already marked
+
+    const candidates = Array.from(document.querySelectorAll("button, a.btn, a.button, input[type='submit'], header nav a, main h1, [role='button']"))
+      .filter(el => {
+        if (el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover")) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 20 && rect.height > 15;
+      })
+      .slice(0, 4);
+
+    const heuristicItems = candidates.map(el => ({
+      element: el,
+      note: `Interesting action: "${(el.innerText || el.value || el.title || 'Page Action').trim().slice(0, 30)}"`
+    }));
+
+    renderDomMarkers(heuristicItems);
   }
 
   function renderDomMarkers(items) {
     clearDomMarkers();
     if (!items || !items.length) return;
 
-    items.forEach((item, i) => {
-      let target = null;
+    items.forEach((item) => {
+      let target = item.element || null;
 
-      // 1. Try selector
-      if (item.selector) {
+      if (!target && item.selector) {
         try { target = document.querySelector(item.selector); } catch (e) {}
       }
 
-      // 2. Try targetHint or textHint
       const hint = item.targetHint || item.textHint || item.label;
       if (!target && hint) {
-        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit']"));
+        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit'], [role='button']"));
         target = candidates.find(el => {
           const text = (el.innerText || el.value || "").toLowerCase();
           return text.includes(hint.toLowerCase()) && !el.closest("#wayfinder-hud-root");
@@ -369,13 +382,27 @@
       if (target && !target.closest("#wayfinder-hud-root") && !target.querySelector(".wayfinder-dom-marker")) {
         const marker = document.createElement("div");
         marker.className = "wayfinder-dom-marker";
+        marker.title = "Wayfinder Insight (Click or hover for details)";
+        
+        const noteText = item.note || item.explanation || item.label || "Key navigation item";
+        
         marker.innerHTML = `
           <div class="wayfinder-marker-dot"></div>
           <div class="wayfinder-marker-popover">
-            <strong>Wayfinder Insight:</strong>
-            <span>${escapeHtml(item.note || item.explanation || item.label || "Key navigation item")}</span>
+            <strong>Wayfinder Insight</strong>
+            <span>${escapeHtml(noteText)}</span>
           </div>
         `;
+
+        // Click on marker opens/toggles popover and prevents propagating to link
+        marker.addEventListener("click", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const popover = marker.querySelector(".wayfinder-marker-popover");
+          if (popover) {
+            popover.classList.toggle("wayfinder-popover-pinned");
+          }
+        });
 
         // Ensure target is relative so marker positions neatly
         const currentPos = window.getComputedStyle(target).position;
@@ -389,12 +416,9 @@
   }
 
   /**
-   * 6. TEXT SELECTION AI ANALYSIS:
-   * When user selects text on page, display a clean floating action pill "Ask Wayfinder".
-   * Clicking it opens an in-page modal/popover with direct AI explanation of the highlighted passage.
+   * 6. TEXT SELECTION AI ANALYSIS
    */
   function initTextSelectionCopilot() {
-    // 1. Floating trigger button
     selectionButton = document.createElement("button");
     selectionButton.id = "wayfinder-selection-btn";
     selectionButton.className = "wayfinder-selection-btn";
@@ -407,7 +431,6 @@
     `;
     document.body.appendChild(selectionButton);
 
-    // 2. Selection popover card
     selectionPopover = document.createElement("div");
     selectionPopover.id = "wayfinder-selection-popover";
     selectionPopover.className = "wayfinder-selection-popover";
@@ -426,7 +449,6 @@
       selectionPopover.classList.remove("visible");
     });
 
-    // Detect user selection
     document.addEventListener("mouseup", (e) => {
       if (e.target.closest("#wayfinder-selection-btn") || e.target.closest("#wayfinder-selection-popover") || e.target.closest("#wayfinder-hud-root")) {
         return;
@@ -439,7 +461,6 @@
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
 
-        // Position button floating right above or below the selection
         const top = window.scrollY + rect.bottom + 8;
         const left = Math.max(10, window.scrollX + rect.left + (rect.width / 2) - 65);
 
@@ -452,7 +473,6 @@
       }
     });
 
-    // Click handler for selection button
     selectionButton.addEventListener("click", async (e) => {
       e.stopPropagation();
       const text = selectionButton.dataset.selectedText;
@@ -460,7 +480,6 @@
 
       selectionButton.classList.remove("visible");
 
-      // Position popover near the button
       const btnRect = selectionButton.getBoundingClientRect();
       const popoverTop = window.scrollY + btnRect.bottom + 6;
       const popoverLeft = Math.min(window.innerWidth - 360, Math.max(16, window.scrollX + btnRect.left - 120));
@@ -502,7 +521,6 @@
       }
     });
 
-    // Dismiss popover if clicked outside
     document.addEventListener("mousedown", (e) => {
       if (!e.target.closest("#wayfinder-selection-popover") && !e.target.closest("#wayfinder-selection-btn")) {
         selectionPopover.classList.remove("visible");
@@ -527,7 +545,7 @@
         <div class="wayfinder-error-icon">⚠️</div>
         <div class="wayfinder-error-title">Notice</div>
         <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
-        <p class="wayfinder-error-help">Check your API Key or Ollama status in the extension popup menu.</p>
+        <p class="wayfinder-error-help">Click the extension icon in your Chrome toolbar to configure OpenAI, Claude, OpenRouter, or ensure local Ollama is active.</p>
       </div>
     `;
   }
@@ -553,17 +571,17 @@
         if (beaconContainer) beaconContainer.style.display = "block";
         if (newSettings.domMarkersEnabled === false) {
           clearDomMarkers();
+        } else {
+          applyHeuristicDomMarkers();
         }
       }
     }
   });
 
-  // Init selection copilot immediately
   initTextSelectionCopilot();
 
-  // Trigger analysis after page settle
   setTimeout(() => {
     runPageAnalysis();
-  }, 1200);
+  }, 1000);
 
 })();

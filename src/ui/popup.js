@@ -51,6 +51,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // Always load metrics on startup so tab count is fresh
+  loadMetrics();
+
+  // Auto-refresh metrics every 2 seconds if user stays on popup
+  setInterval(() => {
+    const activeTab = document.querySelector(".tab-btn.active");
+    if (activeTab && activeTab.getAttribute("data-tab") === "tab-metrics") {
+      loadMetrics();
+    }
+  }, 2000);
+
   // Toggle API key reveal
   toggleKeyVisibility.addEventListener("click", () => {
     if (apiKeyInput.type === "password") {

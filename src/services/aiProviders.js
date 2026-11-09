@@ -67,7 +67,7 @@ export class AIService {
     const activeModel = model || config.defaultModel;
 
     if (config.requiresKey && !apiKey) {
-      throw new Error(`API Key is required for ${config.name}`);
+      throw new Error(`API Key is required for ${config.name}. Please enter your key in the extension popup.`);
     }
 
     if (providerId === "ollama") {
@@ -75,7 +75,6 @@ export class AIService {
     } else if (providerId === "claude") {
       return this._callClaude({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, responseFormat });
     } else {
-      // Standard OpenAI-compatible format (OpenAI, OpenRouter, Meta/Groq)
       return this._callOpenAICompatible({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, providerId, responseFormat });
     }
   }
@@ -113,15 +112,31 @@ export class AIService {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`AI Provider HTTP Error (${res.status}): ${errText}`);
+      let msg = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.error?.message) msg = parsed.error.message;
+      } catch (e) {}
+      throw new Error(`(${res.status}) ${msg}`);
     }
 
     const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.choices?.[0]?.message?.content || "";
+    
+    // Calculate or fallback token metrics
+    let promptTokens = data.usage?.prompt_tokens || 0;
+    let completionTokens = data.usage?.completion_tokens || 0;
+    if (!promptTokens) {
+      promptTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+    }
+    if (!completionTokens) {
+      completionTokens = Math.ceil(content.length / 4);
+    }
+
     const usage = {
-      promptTokens: data.usage?.prompt_tokens || 0,
-      completionTokens: data.usage?.completion_tokens || 0,
-      totalTokens: data.usage?.total_tokens || 0
+      promptTokens,
+      completionTokens,
+      totalTokens: data.usage?.total_tokens || (promptTokens + completionTokens)
     };
 
     const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
@@ -152,15 +167,23 @@ export class AIService {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`Claude HTTP Error (${res.status}): ${errText}`);
+      let msg = errText;
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.error?.message) msg = parsed.error.message;
+      } catch (e) {}
+      throw new Error(`(${res.status}) ${msg}`);
     }
 
     const data = await res.json();
-    const content = data.content?.[0]?.text;
+    const content = data.content?.[0]?.text || "";
+    const promptTokens = data.usage?.input_tokens || Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+    const completionTokens = data.usage?.output_tokens || Math.ceil(content.length / 4);
+
     const usage = {
-      promptTokens: data.usage?.input_tokens || 0,
-      completionTokens: data.usage?.output_tokens || 0,
-      totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens
     };
 
     const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
@@ -194,18 +217,22 @@ export class AIService {
       }
 
       const data = await res.json();
-      const content = data.message?.content;
+      const content = data.message?.content || "";
+      
+      const promptTokens = data.prompt_eval_count || Math.ceil((systemPrompt.length + userPrompt.length) / 4);
+      const completionTokens = data.eval_count || Math.ceil(content.length / 4);
+
       const usage = {
-        promptTokens: data.prompt_eval_count || 0,
-        completionTokens: data.eval_count || 0,
-        totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens
       };
 
       const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
       return { data: parsed, usage };
     } catch (err) {
       if (err.message.includes("Failed to fetch") || err.name === "TypeError") {
-        throw new Error(`Cannot connect to local Ollama at ${endpoint}. Ensure Ollama is running ('ollama serve') and OLLAMA_ORIGINS="*" is set.`);
+        throw new Error(`Cannot connect to local Ollama at ${endpoint}. Make sure Ollama is running ('ollama serve') or switch to OpenAI/Claude/OpenRouter in the extension popup.`);
       }
       throw err;
     }
@@ -220,15 +247,14 @@ export class AIService {
       if (match) {
         try {
           return JSON.parse(match[0]);
-        } catch (inner) {
-          // fallback
-        }
+        } catch (inner) {}
       }
       return {
         summary: "Navigational guidance",
         recommendations: [rawText],
         pageGoal: "General navigation",
-        suggestedActions: []
+        suggestedActions: [],
+        domHighlights: []
       };
     }
   }
