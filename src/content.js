@@ -1,21 +1,25 @@
 /**
  * Wayfinder AI Content Script
- * Extracts page context, communicates with background AI service,
- * and renders an unobtrusive interactive HUD / DOM beacon overlay on the web page.
+ * 3 Interaction Modes:
+ * 1. Persistent Floating Beacon HUD with click-to-pin & hover-away dismissal
+ * 2. In-Page DOM Markers (purple markers/beacons over interesting buttons/links with popovers)
+ * 3. Text Selection AI Tooltip (highlight text to trigger instant AI explanation)
  */
 
 (function () {
-  // Prevent duplicate execution
   if (window.__WAYFINDER_INITIALIZED__) return;
   window.__WAYFINDER_INITIALIZED__ = true;
 
-  let currentGuidance = null;
   let isAnalyzing = false;
   let beaconContainer = null;
   let overlayCard = null;
+  let isCardPinned = false;
+  let closeTimer = null;
+  let selectionButton = null;
+  let selectionPopover = null;
 
   /**
-   * 1. Extract clean page context for the AI
+   * 1. Extract context from DOM
    */
   function extractPageContext() {
     const title = document.title || "";
@@ -25,14 +29,12 @@
     const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") ||
                      document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
 
-    // Extract notable headings
     const headingElements = Array.from(document.querySelectorAll("h1, h2, h3")).slice(0, 8);
     const headings = headingElements.map(h => h.innerText.trim()).filter(Boolean);
 
-    // Extract key action elements (buttons, primary links, forms)
     const actionElements = [];
     document.querySelectorAll("button, a.btn, a.button, input[type='submit'], [role='button']").forEach((el, idx) => {
-      if (idx < 10) {
+      if (idx < 12) {
         const text = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
         if (text && text.length < 50) {
           actionElements.push({
@@ -44,26 +46,17 @@
       }
     });
 
-    // Extract condensed readable body text (strip scripts/styles)
     const clone = document.body ? document.body.cloneNode(true) : null;
     let condensedText = "";
     if (clone) {
-      clone.querySelectorAll("script, style, noscript, svg, nav, footer, header").forEach(node => node.remove());
+      clone.querySelectorAll("script, style, noscript, svg, nav, footer, header, #wayfinder-hud-root, #wayfinder-selection-btn, #wayfinder-selection-popover").forEach(node => node.remove());
       condensedText = (clone.innerText || "")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 1500); // lightweight context window limit
+        .slice(0, 1500);
     }
 
-    return {
-      title,
-      url,
-      domain,
-      metaDescription: metaDesc,
-      headings,
-      actionElements,
-      condensedText
-    };
+    return { title, url, domain, metaDescription: metaDesc, headings, actionElements, condensedText };
   }
 
   function generateSimpleSelector(el) {
@@ -76,7 +69,10 @@
   }
 
   /**
-   * 2. Initialize and inject DOM Beacon / Indicator
+   * 2. Initialize HUD with robust hover & pin logic
+   * User can hover over beacon -> panel appears.
+   * If mouse leaves both beacon AND panel -> panel closes after a short buffer.
+   * User can click the beacon or pin icon to keep it open permanently.
    */
   function injectBeaconHUD() {
     if (document.getElementById("wayfinder-hud-root")) return;
@@ -85,10 +81,9 @@
     beaconContainer.id = "wayfinder-hud-root";
     beaconContainer.className = "wayfinder-hud-root";
 
-    // Floating Signal Beacon
     const beacon = document.createElement("div");
     beacon.className = "wayfinder-signal-beacon";
-    beacon.title = "Wayfinder AI Web Navigator - Hover or click to expand guidance";
+    beacon.title = "Wayfinder AI - Click to toggle panel, or hover to preview";
     beacon.innerHTML = `
       <div class="wayfinder-beacon-glow"></div>
       <div class="wayfinder-beacon-icon">
@@ -100,29 +95,34 @@
       <div class="wayfinder-beacon-badge" id="wayfinder-beacon-badge" style="display:none;">!</div>
     `;
 
-    // Interactive Guidance Card
     overlayCard = document.createElement("div");
     overlayCard.className = "wayfinder-overlay-card";
     overlayCard.innerHTML = `
       <div class="wayfinder-card-header">
         <div class="wayfinder-card-brand">
           <span class="wayfinder-logo-dot"></span>
-          <span class="wayfinder-card-title">Wayfinder AI Navigator</span>
+          <span class="wayfinder-card-title">Wayfinder Navigator</span>
+          <span class="wayfinder-pin-badge" id="wayfinder-pin-badge" title="Card is pinned open" style="display:none;">Pinned</span>
         </div>
         <div class="wayfinder-card-controls">
-          <button class="wayfinder-refresh-btn" id="wayfinder-refresh-btn" title="Refresh Analysis">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="wayfinder-icon-btn" id="wayfinder-pin-btn" title="Pin / Unpin panel">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v8m-4-4h8M5 10l2 2v7l5 3 5-3v-7l2-2"></path>
+            </svg>
+          </button>
+          <button class="wayfinder-icon-btn" id="wayfinder-refresh-btn" title="Re-analyze Page">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M23 4v6h-6"></path>
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
             </svg>
           </button>
-          <button class="wayfinder-close-btn" id="wayfinder-close-btn" title="Minimize">&times;</button>
+          <button class="wayfinder-icon-btn" id="wayfinder-close-btn" title="Dismiss Panel">&times;</button>
         </div>
       </div>
       <div class="wayfinder-card-body" id="wayfinder-card-body">
         <div class="wayfinder-loading-state">
           <div class="wayfinder-spinner"></div>
-          <span>Synthesizing page context & patterns...</span>
+          <span>Scanning DOM & contextual cues...</span>
         </div>
       </div>
     `;
@@ -131,26 +131,51 @@
     beaconContainer.appendChild(overlayCard);
     document.body.appendChild(beaconContainer);
 
-    // Event listeners: Hover or Click to toggle overlay
-    let hoverTimeout;
-    beacon.addEventListener("mouseenter", () => {
-      clearTimeout(hoverTimeout);
+    // Opening & Dismissal handlers
+    function openCard() {
+      clearTimeout(closeTimer);
       overlayCard.classList.add("wayfinder-card-open");
-    });
+    }
 
-    beaconContainer.addEventListener("mouseleave", () => {
-      hoverTimeout = setTimeout(() => {
+    function scheduleClose() {
+      if (isCardPinned) return; // Do not close if pinned
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
         overlayCard.classList.remove("wayfinder-card-open");
-      }, 500);
-    });
+      }, 350); // Generous buffer so moving mouse between beacon and card is seamless
+    }
 
+    // Beacon hover events
+    beacon.addEventListener("mouseenter", openCard);
+    beacon.addEventListener("mouseleave", scheduleClose);
+
+    // Overlay Card hover events (crucial: entering the panel keeps it alive!)
+    overlayCard.addEventListener("mouseenter", openCard);
+    overlayCard.addEventListener("mouseleave", scheduleClose);
+
+    // Beacon click toggles persistent pinned state
     beacon.addEventListener("click", (e) => {
       e.stopPropagation();
-      overlayCard.classList.toggle("wayfinder-card-open");
+      isCardPinned = !isCardPinned;
+      updatePinUI();
+      if (isCardPinned) {
+        openCard();
+      } else {
+        overlayCard.classList.toggle("wayfinder-card-open");
+      }
+    });
+
+    // Pin button in card header
+    document.getElementById("wayfinder-pin-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      isCardPinned = !isCardPinned;
+      updatePinUI();
     });
 
     document.getElementById("wayfinder-close-btn").addEventListener("click", (e) => {
       e.stopPropagation();
+      isCardPinned = false;
+      updatePinUI();
       overlayCard.classList.remove("wayfinder-card-open");
     });
 
@@ -160,17 +185,23 @@
     });
   }
 
+  function updatePinUI() {
+    const pinBadge = document.getElementById("wayfinder-pin-badge");
+    const pinBtn = document.getElementById("wayfinder-pin-btn");
+    if (pinBadge) pinBadge.style.display = isCardPinned ? "inline-block" : "none";
+    if (pinBtn) pinBtn.classList.toggle("active-pin", isCardPinned);
+  }
+
   /**
-   * 3. Send context to AI and update DOM
+   * 3. Run Page Analysis
    */
   async function runPageAnalysis(force = false) {
     if (isAnalyzing && !force) return;
 
-    // Check if extension is enabled in storage
-    const storage = await chrome.storage.local.get("wayfinder_settings");
-    const settings = storage.wayfinder_settings || {};
+    const { wayfinder_settings: settings = {} } = await chrome.storage.local.get("wayfinder_settings");
     if (settings.enabled === false) {
       if (beaconContainer) beaconContainer.style.display = "none";
+      clearDomMarkers();
       return;
     } else {
       if (beaconContainer) beaconContainer.style.display = "block";
@@ -184,14 +215,14 @@
       cardBody.innerHTML = `
         <div class="wayfinder-loading-state">
           <div class="wayfinder-spinner"></div>
-          <span>Analyzing DOM & navigation patterns...</span>
+          <span>Analyzing DOM & navigation cues...</span>
         </div>
       `;
     }
 
     const context = extractPageContext();
 
-    // 1. Record visit for pattern learning locally
+    // Log visit for patterns if enabled
     chrome.runtime.sendMessage({
       type: "RECORD_PAGE_VISIT",
       payload: {
@@ -202,7 +233,6 @@
       }
     });
 
-    // 2. Request guidance from background service
     try {
       const response = await chrome.runtime.sendMessage({
         type: "REQUEST_PAGE_ASSISTANCE",
@@ -216,9 +246,14 @@
         return;
       }
 
-      currentGuidance = response.guidance;
       renderGuidanceContent(response.guidance, response.provider, response.model);
-      highlightDomElements(response.guidance.domHighlights || []);
+
+      // Render in-page DOM markers if setting enabled
+      if (response.domMarkersEnabled !== false && settings.domMarkersEnabled !== false) {
+        renderDomMarkers(response.guidance.domHighlights || response.guidance.suggestedActions || []);
+      } else {
+        clearDomMarkers();
+      }
     } catch (err) {
       isAnalyzing = false;
       renderErrorState(err.message);
@@ -226,7 +261,7 @@
   }
 
   /**
-   * 4. Render guidance into UI card
+   * 4. Render main guidance card
    */
   function renderGuidanceContent(guidance, provider, model) {
     const cardBody = document.getElementById("wayfinder-card-body");
@@ -248,7 +283,7 @@
 
     cardBody.innerHTML = `
       <div class="wayfinder-summary-box">
-        <div class="wayfinder-meta-tag">Goal: ${escapeHtml(guidance.pageGoal || "General Navigation")}</div>
+        <div class="wayfinder-meta-tag">Goal: ${escapeHtml(guidance.pageGoal || "Navigation")}</div>
         <p class="wayfinder-summary-text">${escapeHtml(guidance.summary || "Page scanned.")}</p>
       </div>
 
@@ -271,7 +306,6 @@
       </div>
     `;
 
-    // Attach click events for suggested actions
     cardBody.querySelectorAll(".wayfinder-action-chip").forEach(chip => {
       chip.addEventListener("click", () => {
         const idx = chip.getAttribute("data-action-idx");
@@ -283,52 +317,206 @@
 
   function executeSuggestedAction(action) {
     if (!action) return;
+    let targetEl = null;
+
     if (action.targetHint) {
       try {
-        const el = document.querySelector(action.targetHint);
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.classList.add("wayfinder-target-pulse");
-          setTimeout(() => el.classList.remove("wayfinder-target-pulse"), 2500);
-          return;
-        }
-      } catch (e) {
-        // Selector invalid, try text search
-      }
+        targetEl = document.querySelector(action.targetHint);
+      } catch (e) {}
 
-      // Try finding by text
-      const allClickables = Array.from(document.querySelectorAll("a, button"));
-      const match = allClickables.find(el => (el.innerText || "").toLowerCase().includes(action.targetHint.toLowerCase()));
-      if (match) {
-        match.scrollIntoView({ behavior: "smooth", block: "center" });
-        match.classList.add("wayfinder-target-pulse");
-        setTimeout(() => match.classList.remove("wayfinder-target-pulse"), 2500);
+      if (!targetEl) {
+        const all = Array.from(document.querySelectorAll("a, button, input[type='submit'], [role='button']"));
+        targetEl = all.find(el => (el.innerText || el.value || "").toLowerCase().includes(action.targetHint.toLowerCase()));
       }
+    }
+
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      targetEl.classList.add("wayfinder-target-pulse");
+      setTimeout(() => targetEl.classList.remove("wayfinder-target-pulse"), 2500);
     }
   }
 
   /**
-   * 5. Highlight DOM with contextual tooltips
+   * 5. IN-PAGE DOM MARKERS: Purple beacon markers on interesting items with hover popover
    */
-  function highlightDomElements(highlights) {
-    // Clear old tags
-    document.querySelectorAll(".wayfinder-dom-tag").forEach(el => el.remove());
+  function clearDomMarkers() {
+    document.querySelectorAll(".wayfinder-dom-marker").forEach(el => el.remove());
+  }
 
-    highlights.forEach(h => {
-      if (!h.selector) return;
-      try {
-        const el = document.querySelector(h.selector);
-        if (el && !el.closest("#wayfinder-hud-root")) {
-          const tag = document.createElement("span");
-          tag.className = "wayfinder-dom-tag";
-          tag.innerText = `💡 ${h.note || "Focus"}`;
-          el.style.position = el.style.position || "relative";
-          el.appendChild(tag);
+  function renderDomMarkers(items) {
+    clearDomMarkers();
+    if (!items || !items.length) return;
+
+    items.forEach((item, i) => {
+      let target = null;
+
+      // 1. Try selector
+      if (item.selector) {
+        try { target = document.querySelector(item.selector); } catch (e) {}
+      }
+
+      // 2. Try targetHint or textHint
+      const hint = item.targetHint || item.textHint || item.label;
+      if (!target && hint) {
+        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit']"));
+        target = candidates.find(el => {
+          const text = (el.innerText || el.value || "").toLowerCase();
+          return text.includes(hint.toLowerCase()) && !el.closest("#wayfinder-hud-root");
+        });
+      }
+
+      if (target && !target.closest("#wayfinder-hud-root") && !target.querySelector(".wayfinder-dom-marker")) {
+        const marker = document.createElement("div");
+        marker.className = "wayfinder-dom-marker";
+        marker.innerHTML = `
+          <div class="wayfinder-marker-dot"></div>
+          <div class="wayfinder-marker-popover">
+            <strong>Wayfinder Insight:</strong>
+            <span>${escapeHtml(item.note || item.explanation || item.label || "Key navigation item")}</span>
+          </div>
+        `;
+
+        // Ensure target is relative so marker positions neatly
+        const currentPos = window.getComputedStyle(target).position;
+        if (currentPos === "static") {
+          target.style.position = "relative";
         }
-      } catch (e) {
-        // Invalid selector, ignore gracefully
+
+        target.appendChild(marker);
       }
     });
+  }
+
+  /**
+   * 6. TEXT SELECTION AI ANALYSIS:
+   * When user selects text on page, display a clean floating action pill "Ask Wayfinder".
+   * Clicking it opens an in-page modal/popover with direct AI explanation of the highlighted passage.
+   */
+  function initTextSelectionCopilot() {
+    // 1. Floating trigger button
+    selectionButton = document.createElement("button");
+    selectionButton.id = "wayfinder-selection-btn";
+    selectionButton.className = "wayfinder-selection-btn";
+    selectionButton.innerHTML = `
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+      </svg>
+      <span>Analyze with AI</span>
+    `;
+    document.body.appendChild(selectionButton);
+
+    // 2. Selection popover card
+    selectionPopover = document.createElement("div");
+    selectionPopover.id = "wayfinder-selection-popover";
+    selectionPopover.className = "wayfinder-selection-popover";
+    selectionPopover.innerHTML = `
+      <div class="wayfinder-sel-header">
+        <span class="wayfinder-sel-title">✦ Selected Text Analysis</span>
+        <button class="wayfinder-sel-close" id="wayfinder-sel-close">&times;</button>
+      </div>
+      <div class="wayfinder-sel-body" id="wayfinder-sel-body">
+        <div class="wayfinder-spinner"></div>
+      </div>
+    `;
+    document.body.appendChild(selectionPopover);
+
+    document.getElementById("wayfinder-sel-close").addEventListener("click", () => {
+      selectionPopover.classList.remove("visible");
+    });
+
+    // Detect user selection
+    document.addEventListener("mouseup", (e) => {
+      if (e.target.closest("#wayfinder-selection-btn") || e.target.closest("#wayfinder-selection-popover") || e.target.closest("#wayfinder-hud-root")) {
+        return;
+      }
+
+      const selection = window.getSelection();
+      const text = selection ? selection.toString().trim() : "";
+
+      if (text.length > 5) {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        // Position button floating right above or below the selection
+        const top = window.scrollY + rect.bottom + 8;
+        const left = Math.max(10, window.scrollX + rect.left + (rect.width / 2) - 65);
+
+        selectionButton.style.top = `${top}px`;
+        selectionButton.style.left = `${left}px`;
+        selectionButton.classList.add("visible");
+        selectionButton.dataset.selectedText = text;
+      } else {
+        selectionButton.classList.remove("visible");
+      }
+    });
+
+    // Click handler for selection button
+    selectionButton.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const text = selectionButton.dataset.selectedText;
+      if (!text) return;
+
+      selectionButton.classList.remove("visible");
+
+      // Position popover near the button
+      const btnRect = selectionButton.getBoundingClientRect();
+      const popoverTop = window.scrollY + btnRect.bottom + 6;
+      const popoverLeft = Math.min(window.innerWidth - 360, Math.max(16, window.scrollX + btnRect.left - 120));
+
+      selectionPopover.style.top = `${popoverTop}px`;
+      selectionPopover.style.left = `${popoverLeft}px`;
+      selectionPopover.classList.add("visible");
+
+      const body = document.getElementById("wayfinder-sel-body");
+      body.innerHTML = `
+        <div class="wayfinder-loading-state">
+          <div class="wayfinder-spinner"></div>
+          <span>Analyzing highlighted text...</span>
+        </div>
+      `;
+
+      try {
+        const res = await chrome.runtime.sendMessage({
+          type: "ANALYZE_SELECTED_TEXT",
+          payload: {
+            selectedText: text,
+            pageUrl: window.location.href,
+            pageTitle: document.title
+          }
+        });
+
+        if (res && res.success) {
+          body.innerHTML = `
+            <div class="wayfinder-sel-content">${formatMarkdownSnippets(res.analysis)}</div>
+            <div class="wayfinder-footer-provider">
+              <span>Model: <strong>${escapeHtml(res.provider)}</strong> (${escapeHtml(res.model)})</span>
+            </div>
+          `;
+        } else {
+          body.innerHTML = `<p class="wayfinder-error-msg">${escapeHtml(res?.error || "Could not analyze text.")}</p>`;
+        }
+      } catch (err) {
+        body.innerHTML = `<p class="wayfinder-error-msg">${escapeHtml(err.message)}</p>`;
+      }
+    });
+
+    // Dismiss popover if clicked outside
+    document.addEventListener("mousedown", (e) => {
+      if (!e.target.closest("#wayfinder-selection-popover") && !e.target.closest("#wayfinder-selection-btn")) {
+        selectionPopover.classList.remove("visible");
+      }
+    });
+  }
+
+  function formatMarkdownSnippets(text) {
+    if (!text) return "";
+    return escapeHtml(text)
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.*?)\*/g, "<em>$1</em>")
+      .replace(/\n\n/g, "<br><br>")
+      .replace(/\n- /g, "<br>• ");
   }
 
   function renderErrorState(errorMessage) {
@@ -337,7 +525,7 @@
     cardBody.innerHTML = `
       <div class="wayfinder-error-state">
         <div class="wayfinder-error-icon">⚠️</div>
-        <div class="wayfinder-error-title">Navigation Assistant Notice</div>
+        <div class="wayfinder-error-title">Notice</div>
         <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
         <p class="wayfinder-error-help">Check your API Key or Ollama status in the extension popup menu.</p>
       </div>
@@ -354,19 +542,26 @@
       .replace(/'/g, "&#039;");
   }
 
-  // Listen for setting changes (e.g. enable/disable toggle)
+  // Storage listener for setting changes
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.wayfinder_settings) {
-      const newSettings = changes.wayfinder_settings.newValue;
-      if (newSettings && newSettings.enabled === false) {
+      const newSettings = changes.wayfinder_settings.newValue || {};
+      if (newSettings.enabled === false) {
         if (beaconContainer) beaconContainer.style.display = "none";
+        clearDomMarkers();
       } else {
         if (beaconContainer) beaconContainer.style.display = "block";
+        if (newSettings.domMarkersEnabled === false) {
+          clearDomMarkers();
+        }
       }
     }
   });
 
-  // Debounce launch after page load settles
+  // Init selection copilot immediately
+  initTextSelectionCopilot();
+
+  // Trigger analysis after page settle
   setTimeout(() => {
     runPageAnalysis();
   }, 1200);

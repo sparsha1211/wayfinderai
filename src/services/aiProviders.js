@@ -1,6 +1,7 @@
 /**
  * AI Provider Configurations and API Client
- * Supports OpenAI, Anthropic Claude, OpenRouter, Meta (Llama via OpenRouter/Groq/Meta endpoint), and Ollama (Local AI).
+ * Supports OpenAI, Anthropic Claude, OpenRouter, Meta (Llama via Groq/OpenRouter), and Ollama (Local AI).
+ * Returns content + token usage metrics where provided.
  */
 
 export const PROVIDERS = {
@@ -58,9 +59,9 @@ export const PROVIDERS = {
 
 export class AIService {
   /**
-   * Send navigation guidance query to the selected AI provider
+   * Send navigation guidance query or text selection analysis
    */
-  static async requestGuidance({ providerId, apiKey, endpoint, model, systemPrompt, userPrompt }) {
+  static async requestGuidance({ providerId, apiKey, endpoint, model, systemPrompt, userPrompt, responseFormat = "json" }) {
     const config = PROVIDERS[providerId] || PROVIDERS.openai;
     const activeEndpoint = endpoint || config.defaultEndpoint;
     const activeModel = model || config.defaultModel;
@@ -70,16 +71,16 @@ export class AIService {
     }
 
     if (providerId === "ollama") {
-      return this._callOllama({ endpoint: activeEndpoint, model: activeModel, systemPrompt, userPrompt });
+      return this._callOllama({ endpoint: activeEndpoint, model: activeModel, systemPrompt, userPrompt, responseFormat });
     } else if (providerId === "claude") {
-      return this._callClaude({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt });
+      return this._callClaude({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, responseFormat });
     } else {
       // Standard OpenAI-compatible format (OpenAI, OpenRouter, Meta/Groq)
-      return this._callOpenAICompatible({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, providerId });
+      return this._callOpenAICompatible({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, providerId, responseFormat });
     }
   }
 
-  static async _callOpenAICompatible({ endpoint, apiKey, model, systemPrompt, userPrompt, providerId }) {
+  static async _callOpenAICompatible({ endpoint, apiKey, model, systemPrompt, userPrompt, providerId, responseFormat }) {
     const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
@@ -97,9 +98,12 @@ export class AIService {
         { role: "user", content: userPrompt }
       ],
       temperature: 0.2,
-      max_tokens: 600,
-      response_format: { type: "json_object" }
+      max_tokens: 600
     };
+
+    if (responseFormat === "json") {
+      payload.response_format = { type: "json_object" };
+    }
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -114,10 +118,17 @@ export class AIService {
 
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content;
-    return this._parseJsonResponse(content);
+    const usage = {
+      promptTokens: data.usage?.prompt_tokens || 0,
+      completionTokens: data.usage?.completion_tokens || 0,
+      totalTokens: data.usage?.total_tokens || 0
+    };
+
+    const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
+    return { data: parsed, usage };
   }
 
-  static async _callClaude({ endpoint, apiKey, model, systemPrompt, userPrompt }) {
+  static async _callClaude({ endpoint, apiKey, model, systemPrompt, userPrompt, responseFormat }) {
     const headers = {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
@@ -146,19 +157,29 @@ export class AIService {
 
     const data = await res.json();
     const content = data.content?.[0]?.text;
-    return this._parseJsonResponse(content);
+    const usage = {
+      promptTokens: data.usage?.input_tokens || 0,
+      completionTokens: data.usage?.output_tokens || 0,
+      totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
+    };
+
+    const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
+    return { data: parsed, usage };
   }
 
-  static async _callOllama({ endpoint, model, systemPrompt, userPrompt }) {
+  static async _callOllama({ endpoint, model, systemPrompt, userPrompt, responseFormat }) {
     const payload = {
       model,
-      format: "json",
       stream: false,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
       ]
     };
+
+    if (responseFormat === "json") {
+      payload.format = "json";
+    }
 
     try {
       const res = await fetch(endpoint, {
@@ -174,10 +195,17 @@ export class AIService {
 
       const data = await res.json();
       const content = data.message?.content;
-      return this._parseJsonResponse(content);
+      const usage = {
+        promptTokens: data.prompt_eval_count || 0,
+        completionTokens: data.eval_count || 0,
+        totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
+      };
+
+      const parsed = responseFormat === "json" ? this._parseJsonResponse(content) : { text: content };
+      return { data: parsed, usage };
     } catch (err) {
       if (err.message.includes("Failed to fetch") || err.name === "TypeError") {
-        throw new Error(`Cannot connect to local Ollama at ${endpoint}. Ensure Ollama is running (e.g. 'ollama serve') and OLLAMA_ORIGINS="*" is allowed.`);
+        throw new Error(`Cannot connect to local Ollama at ${endpoint}. Ensure Ollama is running ('ollama serve') and OLLAMA_ORIGINS="*" is set.`);
       }
       throw err;
     }
@@ -188,7 +216,6 @@ export class AIService {
     try {
       return JSON.parse(rawText);
     } catch (e) {
-      // Find JSON block enclosed in markdown or braces
       const match = rawText.match(/\{[\s\S]*\}/);
       if (match) {
         try {

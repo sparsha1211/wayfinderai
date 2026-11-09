@@ -31,20 +31,21 @@
 
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="tab-settings">AI Provider</button>
-      <button class="tab-btn" data-tab="tab-patterns">Learned Patterns</button>
-      <button class="tab-btn" data-tab="tab-about">About</button>
+      <button class="tab-btn active" data-tab="tab-settings">Settings & AI</button>
+      <button class="tab-btn" data-tab="tab-metrics">Metrics & Usage</button>
+      <button class="tab-btn" data-tab="tab-about">Guide</button>
     </nav>
 
-    <!-- TAB 1: AI Provider Settings -->
+    <!-- TAB 1: AI Provider & Core Settings -->
     <section id="tab-settings" class="tab-content active">
+      <div class="section-label">AI Engine</div>
       <div class="form-group">
-        <label for="providerSelect">Active AI Provider</label>
+        <label for="providerSelect">Active Provider</label>
         <select id="providerSelect" class="form-select">
           <option value="ollama">Ollama (Local AI - Free & Private)</option>
           <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
           <option value="claude">Anthropic Claude (Haiku / Sonnet)</option>
-          <option value="openrouter">OpenRouter (Multi-model aggregator)</option>
+          <option value="openrouter">OpenRouter (Aggregator)</option>
           <option value="meta">Meta / Muse (Llama 3.1 & 3.3)</option>
         </select>
       </div>
@@ -61,7 +62,7 @@
 
       <!-- Model Selection -->
       <div class="form-group">
-        <label for="modelSelect">Model</label>
+        <label for="modelSelect">Model Name</label>
         <input type="text" id="modelSelect" class="form-input" placeholder="model name">
       </div>
 
@@ -72,52 +73,108 @@
         <span class="input-hint" id="endpointHint">For Ollama default: http://localhost:11434/api/chat</span>
       </div>
 
+      <div class="section-label" style="margin-top: 18px;">Navigation & DOM Preferences</div>
+
+      <!-- Setting: In-Page Purple DOM Markers -->
+      <div class="toggle-option-card">
+        <div class="option-info">
+          <span class="option-title">In-Page Purple Markers</span>
+          <span class="option-desc">Highlight interesting buttons & links directly on the webpage with interactive hover popovers.</span>
+        </div>
+        <label class="switch-sm">
+          <input type="checkbox" id="domMarkersToggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Setting: Local Pattern Learning -->
+      <div class="toggle-option-card">
+        <div class="option-info">
+          <span class="option-title">Learn Navigation Habits</span>
+          <span class="option-desc">Store frequent workflow transitions locally to refine contextual assistance.</span>
+        </div>
+        <label class="switch-sm">
+          <input type="checkbox" id="learnPatternsToggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Compact Pattern Reset inside Settings -->
+      <div class="settings-action-row">
+        <button id="clearHistoryBtn" class="btn btn-secondary-sm">Clear Learned History</button>
+      </div>
+
       <div class="action-buttons">
-        <button id="saveSettingsBtn" class="btn btn-primary">Save & Apply</button>
+        <button id="saveSettingsBtn" class="btn btn-primary">Save Preferences</button>
       </div>
 
       <div id="statusToast" class="status-toast" style="display:none;"></div>
     </section>
 
-    <!-- TAB 2: Learned Patterns & History -->
-    <section id="tab-patterns" class="tab-content">
-      <div class="patterns-header">
-        <p class="section-desc">Wayfinder AI analyzes your workflows locally to personalize future page guidance.</p>
-        <button id="clearHistoryBtn" class="btn btn-secondary-sm">Clear Data</button>
-      </div>
-
-      <div class="pattern-block">
-        <div class="pattern-title">Top Visited Hubs</div>
-        <div id="topDomainsList" class="tag-cloud">
-          <span class="empty-state">No visits recorded yet.</span>
+    <!-- TAB 2: Metrics & Token Usage Dashboard -->
+    <section id="tab-metrics" class="tab-content">
+      <div class="metrics-overview-grid">
+        <div class="metric-card">
+          <span class="metric-value" id="totalCallsMetric">0</span>
+          <span class="metric-title">Total AI Calls</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-value" id="totalTokensMetric">0</span>
+          <span class="metric-title">Total Tokens</span>
         </div>
       </div>
 
-      <div class="pattern-block">
-        <div class="pattern-title">Recognized Topics & Interests</div>
-        <div id="topInterestsList" class="tag-cloud">
-          <span class="empty-state">No topics detected yet.</span>
+      <div class="token-detail-card">
+        <div class="token-row">
+          <span>Prompt / Input Tokens:</span>
+          <strong id="promptTokensMetric">0</strong>
+        </div>
+        <div class="token-row">
+          <span>Completion / Output Tokens:</span>
+          <strong id="completionTokensMetric">0</strong>
+        </div>
+        <div class="token-row">
+          <span>Last Request:</span>
+          <strong id="lastCallMetric">Never</strong>
         </div>
       </div>
 
-      <div class="pattern-block">
-        <div class="pattern-title">Detected Workflow Sequences</div>
-        <ul id="workflowsList" class="workflow-list">
-          <li class="empty-state">No workflow sequences detected yet.</li>
-        </ul>
+      <div class="section-label" style="margin-top: 14px;">Calls by Provider</div>
+      <div id="providerBreakdownList" class="breakdown-list">
+        <span class="empty-state">No calls recorded yet.</span>
+      </div>
+
+      <div style="margin-top: 18px;">
+        <button id="resetMetricsBtn" class="btn btn-secondary-sm" style="width: 100%;">Reset Metrics Counter</button>
       </div>
     </section>
 
-    <!-- TAB 3: About & Quick Guide -->
+    <!-- TAB 3: 3 Ways of Interaction Guide -->
     <section id="tab-about" class="tab-content">
-      <div class="about-card">
-        <h3>How Wayfinder AI Works</h3>
-        <ul>
-          <li><strong>On-Page Signal Beacon:</strong> Look for the purple beacon at the bottom right of any web page. Hover or click to reveal AI navigational hints.</li>
-          <li><strong>DOM Suggestions:</strong> Click any suggested action chip to automatically focus and pulse the target button or link.</li>
-          <li><strong>Local AI Support:</strong> Use <em>Ollama</em> completely offline with <code>llama3.2</code> or <code>mistral</code>.</li>
-          <li><strong>Local Privacy:</strong> History and pattern synthesis remain on your device in Chrome storage.</li>
-        </ul>
+      <div class="guide-card">
+        <div class="guide-step">
+          <div class="guide-badge">1</div>
+          <div class="guide-text">
+            <strong>Signal Beacon & Guidance HUD</strong>
+            <p>Bottom-right purple beacon. Hover to preview page analysis or click to pin open. Clicking quick steps automatically scrolls to and pulses that element.</p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-badge">2</div>
+          <div class="guide-text">
+            <strong>In-Page DOM Purple Markers</strong>
+            <p>Wayfinder tags interesting items directly on the webpage with glowing purple beacons. Hover over any marker for instant advice.</p>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-badge">3</div>
+          <div class="guide-text">
+            <strong>Text Selection AI Copilot</strong>
+            <p>Highlight any text on the webpage. Click <em>"Analyze with AI"</em> to view a concise explanation and decision insights in place.</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -127,7 +184,7 @@
         <span class="indicator-dot active"></span>
         <span id="statusText">Wayfinder AI Active</span>
       </span>
-      <span class="version">v1.0.0</span>
+      <span class="version">v1.1.0</span>
     </footer>
   </div>
 

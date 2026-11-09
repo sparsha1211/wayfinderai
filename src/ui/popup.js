@@ -1,11 +1,12 @@
 /**
  * Wayfinder AI Popup UI Controller
+ * Handles provider configuration, metrics monitoring, DOM marker toggle, and habit controls.
  */
 
 import { PROVIDERS } from "../services/aiProviders.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // Elements
+  // Core UI elements
   const masterToggle = document.getElementById("masterToggle");
   const providerSelect = document.getElementById("providerSelect");
   const apiKeyGroup = document.getElementById("apiKeyGroup");
@@ -15,11 +16,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   const modelSelect = document.getElementById("modelSelect");
   const endpointInput = document.getElementById("endpointInput");
   const endpointHint = document.getElementById("endpointHint");
+  const domMarkersToggle = document.getElementById("domMarkersToggle");
+  const learnPatternsToggle = document.getElementById("learnPatternsToggle");
   const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+  const clearHistoryBtn = document.getElementById("clearHistoryBtn");
   const statusToast = document.getElementById("statusToast");
   const statusText = document.getElementById("statusText");
   const indicatorDot = document.querySelector(".indicator-dot");
-  const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+
+  // Metrics elements
+  const totalCallsMetric = document.getElementById("totalCallsMetric");
+  const totalTokensMetric = document.getElementById("totalTokensMetric");
+  const promptTokensMetric = document.getElementById("promptTokensMetric");
+  const completionTokensMetric = document.getElementById("completionTokensMetric");
+  const lastCallMetric = document.getElementById("lastCallMetric");
+  const providerBreakdownList = document.getElementById("providerBreakdownList");
+  const resetMetricsBtn = document.getElementById("resetMetricsBtn");
 
   // Tab Switching
   const tabButtons = document.querySelectorAll(".tab-btn");
@@ -33,8 +45,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const target = document.getElementById(btn.getAttribute("data-tab"));
       if (target) target.classList.add("active");
 
-      if (btn.getAttribute("data-tab") === "tab-patterns") {
-        loadPatternInsights();
+      if (btn.getAttribute("data-tab") === "tab-metrics") {
+        loadMetrics();
       }
     });
   });
@@ -56,6 +68,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const isEnabled = settings.enabled !== false;
   masterToggle.checked = isEnabled;
   updateStatusDisplay(isEnabled);
+
+  domMarkersToggle.checked = settings.domMarkersEnabled !== false;
+  learnPatternsToggle.checked = settings.learnPatterns !== false;
 
   const activeProvider = settings.activeProvider || "ollama";
   providerSelect.value = activeProvider;
@@ -84,11 +99,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     const key = apiKeyInput.value.trim();
     const model = modelSelect.value.trim();
     const endpoint = endpointInput.value.trim();
+    const domMarkersEnabled = domMarkersToggle.checked;
+    const learnPatterns = learnPatternsToggle.checked;
 
     const curr = await chrome.storage.local.get("wayfinder_settings");
     const newSettings = curr.wayfinder_settings || { apiKeys: {}, customEndpoints: {}, selectedModels: {} };
 
     newSettings.activeProvider = provider;
+    newSettings.domMarkersEnabled = domMarkersEnabled;
+    newSettings.learnPatterns = learnPatterns;
     newSettings.apiKeys = newSettings.apiKeys || {};
     newSettings.customEndpoints = newSettings.customEndpoints || {};
     newSettings.selectedModels = newSettings.selectedModels || {};
@@ -104,15 +123,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     await chrome.storage.local.set({ wayfinder_settings: newSettings });
-    showToast("Settings saved successfully!");
+    showToast("Preferences & AI settings saved!");
   });
 
   // Clear learning data
   clearHistoryBtn.addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "CLEAR_HISTORY" }, (res) => {
       if (res?.success) {
-        showToast("Learned history and patterns reset.");
-        loadPatternInsights();
+        showToast("Learned history and habits reset.");
+      }
+    });
+  });
+
+  // Reset metrics
+  resetMetricsBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "RESET_METRICS" }, (res) => {
+      if (res?.success) {
+        showToast("Metrics counter reset to zero.");
+        loadMetrics();
       }
     });
   });
@@ -120,7 +148,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   function updateProviderUI(providerKey, currentSettings) {
     const provider = PROVIDERS[providerKey] || PROVIDERS.openai;
 
-    // Show/hide API key group
     if (provider.requiresKey) {
       apiKeyGroup.style.display = "block";
       apiKeyInput.value = currentSettings.apiKeys?.[providerKey] || "";
@@ -130,7 +157,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       apiKeyInput.value = "";
     }
 
-    // Model and endpoint
     modelSelect.value = currentSettings.selectedModels?.[providerKey] || provider.defaultModel;
     endpointInput.value = currentSettings.customEndpoints?.[providerKey] || provider.defaultEndpoint;
 
@@ -156,46 +182,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     statusToast.style.display = "block";
     setTimeout(() => {
       statusToast.style.display = "none";
-    }, 3000);
+    }, 2800);
   }
 
-  // Load and render pattern insights
-  function loadPatternInsights() {
-    chrome.runtime.sendMessage({ type: "GET_PATTERNS_CONTEXT" }, (res) => {
-      if (!res || !res.success || !res.patterns) return;
-      const { topDomains = [], topInterests = [], frequentWorkflows = [] } = res.patterns;
+  // Load and render AI call & token metrics
+  async function loadMetrics() {
+    const { wayfinder_metrics: metrics = {} } = await chrome.storage.local.get("wayfinder_metrics");
 
-      const domainsContainer = document.getElementById("topDomainsList");
-      const interestsContainer = document.getElementById("topInterestsList");
-      const workflowsContainer = document.getElementById("workflowsList");
+    totalCallsMetric.textContent = (metrics.totalCalls || 0).toLocaleString();
+    totalTokensMetric.textContent = (metrics.totalTokens || 0).toLocaleString();
+    promptTokensMetric.textContent = (metrics.promptTokens || 0).toLocaleString();
+    completionTokensMetric.textContent = (metrics.completionTokens || 0).toLocaleString();
 
-      // Render domains
-      if (topDomains.length > 0) {
-        domainsContainer.innerHTML = topDomains
-          .map(d => `<span class="pattern-tag">${escapeHtml(d)}</span>`)
-          .join("");
-      } else {
-        domainsContainer.innerHTML = `<span class="empty-state">No visits recorded yet.</span>`;
-      }
+    if (metrics.lastCallTimestamp) {
+      const dt = new Date(metrics.lastCallTimestamp);
+      lastCallMetric.textContent = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } else {
+      lastCallMetric.textContent = "Never";
+    }
 
-      // Render interests
-      if (topInterests.length > 0) {
-        interestsContainer.innerHTML = topInterests
-          .map(t => `<span class="pattern-tag">#${escapeHtml(t)}</span>`)
-          .join("");
-      } else {
-        interestsContainer.innerHTML = `<span class="empty-state">No topics detected yet.</span>`;
-      }
-
-      // Render workflows
-      if (frequentWorkflows.length > 0) {
-        workflowsContainer.innerHTML = frequentWorkflows
-          .map(w => `<li>${escapeHtml(w)}</li>`)
-          .join("");
-      } else {
-        workflowsContainer.innerHTML = `<li class="empty-state">No workflow sequences detected yet.</li>`;
-      }
-    });
+    const breakdown = metrics.providerBreakdown || {};
+    const entries = Object.entries(breakdown);
+    if (entries.length > 0) {
+      providerBreakdownList.innerHTML = entries
+        .map(([prov, count]) => `
+          <div class="breakdown-item">
+            <span>${escapeHtml(PROVIDERS[prov]?.name || prov)}</span>
+            <strong>${count} calls</strong>
+          </div>
+        `).join("");
+    } else {
+      providerBreakdownList.innerHTML = `<span class="empty-state">No calls recorded yet.</span>`;
+    }
   }
 
   function escapeHtml(str) {
