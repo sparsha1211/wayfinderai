@@ -10,12 +10,11 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
    - In the popup, click **⚡ Test Connection** beside your API key and model config.
    - Instantly pings your selected provider (OpenAI, Claude, OpenRouter, Meta/Groq, Ollama, or Chrome Built-in AI) with real-time feedback (`✓ Connected successfully!` or clear error explanation).
 
-2. **Automated Dynamic DOM Mutation & Route Change Observer**:
-   - Wayfinder AI automatically detects when:
-     - You navigate to a new page or refresh.
-     - Single Page Applications (SPA) change URL client-side.
-     - Dynamic AJAX / DOM content updates on the active page.
-   - Includes a **rate limiter (6-second cooldown + 2.5s mutation debounce)** to prevent excessive AI queries or API cost runaway.
+2. **Predictable Navigation Analysis (Exactly 1 Call per Page Load / Refresh)**:
+   - To conserve token usage and prevent unnecessary network calls, Wayfinder AI executes **strictly 1 AI analysis per page load / refresh**.
+   - It will not fire repetitive calls on background DOM mutations or AJAX updates.
+   - When navigating to a new URL (including client-side SPA navigation), it resets and runs one clean guidance request for that new page.
+   - You can manually trigger a fresh re-analysis anytime using the **🔄 refresh button** in the guidance card header.
 
 3. **In-Page DOM Purple Markers & 3 Modes of Interaction**:
    - **Mode 1 (Signal Beacon HUD)**: Floating bottom-right beacon. Hover to preview analysis; click to pin permanently.

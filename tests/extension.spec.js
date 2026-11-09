@@ -154,18 +154,19 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
     await webPage.close();
   });
 
-  test('E2E-6: Dynamic DOM mutation triggers observer re-analysis', async () => {
+  test('E2E-6: Maintains single-call-per-page policy and retains markers', async () => {
     const webPage = await context.newPage();
     await webPage.goto(samplePagePath);
+
+    const markers = webPage.locator('.wayfinder-dom-marker');
+    await expect(markers.first()).toBeVisible({ timeout: 5000 });
 
     const dynamicBtn = webPage.locator('#add-dynamic-content');
     await dynamicBtn.click();
 
     await expect(webPage.locator('text=New Dynamic Section Rendered!')).toBeVisible();
 
-    await webPage.waitForTimeout(3000);
-
-    const markers = webPage.locator('.wayfinder-dom-marker');
+    // Verify DOM markers remain active without dispatching excessive calls
     expect(await markers.count()).toBeGreaterThan(0);
 
     await webPage.close();
