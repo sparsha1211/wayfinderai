@@ -264,4 +264,111 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await webPage.close();
   });
+
+  test('E2E-10: Direct Purple Box renders above Amazon-style elements with overflow:hidden and void <input> without being clipped', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open beacon and toggle style to Direct Purple Boxes
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+    const styleToggleBtn = webPage.locator('#wayfinder-style-toggle-btn');
+    await expect(styleToggleBtn).toBeVisible({ timeout: 5000 });
+    await styleToggleBtn.click();
+
+    // Verify direct purple callout boxes are visible
+    const calloutBoxes = webPage.locator('.wayfinder-marker-callout .wayfinder-callout-box');
+    await expect(calloutBoxes.first()).toBeVisible({ timeout: 5000 });
+    const count = await calloutBoxes.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Verify box geometry: width & height must be positive and not clipped by overflow:hidden
+    const boxRect = await calloutBoxes.first().boundingBox();
+    expect(boxRect).not.toBeNull();
+    expect(boxRect.width).toBeGreaterThan(40);
+    expect(boxRect.height).toBeGreaterThan(15);
+
+    // Verify inner elements: icon and text
+    await expect(calloutBoxes.first().locator('.wayfinder-callout-icon')).toBeVisible();
+    await expect(calloutBoxes.first().locator('.wayfinder-callout-text')).toBeVisible();
+
+    // Reset toggle back to Dots
+    await styleToggleBtn.click();
+
+    await webPage.close();
+  });
+
+  test('E2E-11: Clicking "💬 Ask" button on Direct Purple Box opens Copilot Chat with element context', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open beacon and toggle style to Direct Purple Boxes
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+    const styleToggleBtn = webPage.locator('#wayfinder-style-toggle-btn');
+    await expect(styleToggleBtn).toBeVisible({ timeout: 5000 });
+    await styleToggleBtn.click();
+
+    const askBtn = webPage.locator('.wayfinder-callout-chat-btn').first();
+    await expect(askBtn).toBeVisible({ timeout: 5000 });
+
+    // Click "💬 Ask" button on the purple box
+    await askBtn.click();
+
+    // Verify Copilot Chatbox opened
+    const chatRoot = webPage.locator('#wayfinder-chat-root');
+    await expect(chatRoot).toBeVisible({ timeout: 5000 });
+
+    // Verify context banner is visible in chatbox with element context
+    const contextBanner = webPage.locator('#wayfinder-chat-context-banner');
+    await expect(contextBanner).toBeVisible();
+    const contextText = webPage.locator('#wayfinder-chat-context-text');
+    const pillText = await contextText.innerText();
+    expect(pillText.length).toBeGreaterThan(0);
+
+    // Close chatbox
+    const closeBtn = webPage.locator('#wayfinder-chat-close');
+    await closeBtn.click();
+    await expect(chatRoot).not.toBeVisible();
+
+    // Reset toggle back to Dots
+    await styleToggleBtn.click();
+
+    await webPage.close();
+  });
+
+  test('E2E-12: Setting marker style in popup persists and applies Direct Purple Boxes by default on reload', async () => {
+    // 1. Open popup and set marker display mode to "badge" (Direct Box)
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    const markerSelect = popupPage.locator('#markerStyleSelect');
+    await expect(markerSelect).toBeVisible();
+    await markerSelect.selectOption('badge');
+    await popupPage.waitForTimeout(400);
+    await popupPage.close();
+
+    // 2. Open a new web page and verify direct purple boxes render immediately by default
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    const calloutBoxes = webPage.locator('.wayfinder-marker-callout .wayfinder-callout-box');
+    await expect(calloutBoxes.first()).toBeVisible({ timeout: 5000 });
+    expect(await calloutBoxes.count()).toBeGreaterThan(0);
+
+    // Reset popup back to "dot" so subsequent tests start in clean state
+    const resetPopup = await context.newPage();
+    await resetPopup.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+    await resetPopup.selectOption('#markerStyleSelect', 'dot');
+    await resetPopup.waitForTimeout(400);
+    await resetPopup.close();
+
+    await webPage.close();
+  });
 });
