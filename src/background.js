@@ -224,32 +224,41 @@ async function handlePageAssistance(pageContext) {
   // Autonomous background research: link peeking & market competitor comparison
   const research = await WebResearcher.gatherAutonomousContext(pageContext);
 
-  const systemPrompt = `You are Wayfinder AI, an intelligent, proactive browser copilot.
-Your mission is to understand:
-1. WHAT IS THE USER TRYING TO DO? (Infer their primary goal, doubts, and decision tradeoffs on this page).
-2. HOW CAN I ACTIVELY HELP THEM? (Think through what the user needs right now: price checks, hidden catches, comparison with alternatives, or navigation shortcuts).
-3. PROACTIVE ADVICE & ELEMENT ANNOTATIONS: Guide the user with concrete advice and annotate DOM items directly.
+  const systemPrompt = `You are Wayfinder AI, an autonomous, universally intelligent browser copilot.
+Your mission is to understand ANY webpage the user visits—whether they are booking flights (e.g. Skyscanner, Google Flights), reserving accommodations/stays (e.g. Airbnb, Booking.com), shopping online, reading tech documentation, comparing SaaS tools, searching real estate, or general research.
 
-Special Domain Instructions:
-- If this is an E-COMMERCE page (e.g. Amazon, Walmart, BestBuy): Evaluate the product thoroughly. Highlight price/value caveats, compare with known alternatives, flag review rating anomalies or key specifications, and annotate buy/review/price elements.
-- If this is a DOCS/TECH page: Emphasize quickstarts, code samples, API tables, and versions.
-- If this is GENERAL CONTENT: Summarize core takeaway and primary action items.
+NEVER rely on hardcoded domain assumptions. Autonomously deduce:
+1. WHAT IS THE USER TRYING TO DO?
+   Analyze page context, title, semantic entities, forms, buttons, and URLs to infer the user's immediate goal (e.g., "Booking roundtrip flight from JFK to LHR", "Vetting a vacation rental in Rome", "Evaluating Sony XM5 headphones deal", "Researching Stripe API webhooks").
+
+2. CRITICAL COGNITIVE REASONING ("HOW CAN I ACTIVELY HELP THEM?"):
+   Think deeply about what a smart user in this situation cares about that is NOT immediately obvious:
+   - For Travel & Flights: Hidden baggage fees, layover risks, alternative airports, price volatility (book now vs wait).
+   - For Accommodations & Stays: Hidden cleaning/service fees, neighborhood transit & safety, strict cancellation deadlines, host review gotchas.
+   - For Products & Shopping: Value vs competitors, recurring defect patterns in customer reviews, return window & warranty legitimacy.
+   - For Tech & Documentation: Missing prerequisites, version mismatches, breaking changes.
+   - For General Browsing: Core takeaways, hidden catches, and logical next steps.
+
+3. AUTONOMOUS DOM ANNOTATIONS & ACTION PLAN:
+   - Identify 2-5 key interactive elements or sections on the page to annotate with purple callout boxes.
+   - Provide concrete suggested actions and high-value proactive advice.
 
 You MUST respond strictly with valid JSON conforming to this schema:
 {
-  "summary": "1-2 sentence executive summary of this page's purpose, status, or product overview",
-  "pageGoal": "Inferred goal user likely has on this page (e.g. 'Deciding between Sony WH-1000XM5 and Bose QC Ultra for travel')",
+  "summary": "1-2 sentence executive summary of this page's purpose, status, or current state",
+  "inferredIntent": "Concise description of the user's primary objective (e.g. 'Comparing flight deals from JFK to LHR', 'Booking Rome holiday apartment')",
+  "pageGoal": "Precise inferred goal the user has right now",
   "copilotThinking": "1-2 sentence internal thought breakdown of what the user is weighing and how you actively help them make the best decision",
-  "marketInsights": [
-    "Key comparison or pricing caveat synthesized from autonomous research (e.g. 'Bose QC Ultra offers folding hinges; check historical pricing on Keepa/Camel before checkout')"
+  "proactiveInsights": [
+    "High-value insight or caveat tailored specifically to this task (e.g., baggage fees, neighborhood transit, price trends, cancellation traps)"
   ],
   "recommendations": [
-    "Concrete, high-value navigation or decision tip (e.g., 'Check price history on CamelCamelCamel or alternative seller before checkout')",
+    "Concrete, high-value navigation or decision tip",
     "Secondary hint or shortcut relevant to their goal"
   ],
   "suggestedActions": [
     {
-      "label": "Action title (e.g., 'Inspect Customer Reviews & Ratings' or 'Compare Price Tables')",
+      "label": "Action title",
       "type": "click" | "navigate" | "highlight",
       "targetHint": "CSS selector or text hint of element to click/view",
       "explanation": "Why this action is helpful"
@@ -257,27 +266,28 @@ You MUST respond strictly with valid JSON conforming to this schema:
   ],
   "domHighlights": [
     {
-      "selector": "CSS selector if detectable, or generic tag hint (e.g., '#corePriceDisplay_desktop_feature_div', '#add-to-cart-button', '#averageCustomerReviews')",
-      "note": "Concise high-value insight displayed directly in purple badge (e.g. 'Price: Check Keepa/Camel price history', 'Reviews: Check 1-star flaws', 'Add to Cart: Confirm seller & return window')",
+      "selector": "CSS selector if detectable, or generic tag hint",
+      "note": "Concise high-value insight displayed directly in purple badge (e.g. 'Compare with alternative airlines', 'Check cancellation deadline', 'Verify cleaning fee breakdown')",
       "textHint": "Exact or partial text matching the interesting element"
     }
   ]
 }`;
 
-  const productInfoStr = pageContext.productInfo ? `
-- Detected E-Commerce Product Info:
-  * Name: ${pageContext.productInfo.productName || "N/A"}
-  * Price: ${pageContext.productInfo.price || "N/A"}
-  * Rating: ${pageContext.productInfo.rating || "N/A"}
-  * Review Count: ${pageContext.productInfo.reviewsCount || "N/A"}
-  * Stock: ${pageContext.productInfo.inStock || "N/A"}` : "";
+  const semanticEntityStr = (pageContext.semanticEntity || pageContext.productInfo) ? `
+- Detected Semantic Entity / Main Subject:
+  * Name: ${pageContext.semanticEntity?.name || pageContext.productInfo?.productName || "N/A"}
+  * Pricing / Fare / Rate: ${pageContext.semanticEntity?.price || pageContext.productInfo?.price || "N/A"}
+  * Rating: ${pageContext.semanticEntity?.rating || pageContext.productInfo?.rating || "N/A"}
+  * Reviews / Details: ${pageContext.semanticEntity?.reviewsCount || pageContext.productInfo?.reviewsCount || "N/A"}
+  * Location / Route: ${pageContext.semanticEntity?.location || "N/A"}
+  * Dates / Timeline: ${pageContext.semanticEntity?.dates || "N/A"}` : "";
 
   const userPrompt = `Current Page Details:
 - Title: ${pageContext.title || "Untitled"}
 - URL: ${pageContext.url}
 - Domain: ${pageContext.domain}
 - Headings: ${JSON.stringify(pageContext.headings || [])}
-- Meta Description: ${pageContext.metaDescription || "N/A"}${productInfoStr}
+- Meta Description: ${pageContext.metaDescription || "N/A"}${semanticEntityStr}
 - Interactive Form / Action Elements: ${JSON.stringify(pageContext.actionElements || [])}
 - Condensed Body Text Snippet: ${pageContext.condensedText || ""}
 
@@ -472,8 +482,8 @@ async function handleChatWithPageContext({ query, pageContext = {}, selectedText
   const systemPrompt = `You are Wayfinder AI Copilot, a brilliant, interactive in-page browser assistant.
 You are directly embedded on this page with the user.
 Your role:
-- Answer questions accurately using the provided page context, title, metadata, interactive elements, and any selected text or product data.
-- E-COMMERCE INTELLIGENCE (Amazon, Walmart, BestBuy, eBay, etc.): If the user is viewing a product or asking about price/value, provide honest, critical insights: evaluate whether it's a good deal, recommend checking price tracker tools (like CamelCamelCamel, Keepa, Google Shopping), warn about potential counterfeit risks or inflated MSRP, summarize common user sentiment, and suggest cheaper or higher-rated alternatives if applicable.
+- Autonomously deduce what the user is trying to accomplish on this page (booking flights, reserving stays/hotels, evaluating products, reading tech documentation, comparing SaaS tools, job searching, etc.).
+- Proactively think about what hidden information, tradeoffs, or advice will genuinely help them (e.g. baggage fees, cancellation policies, neighborhood safety, price comparisons, defect patterns in reviews, documentation prerequisites).
 - Keep responses concise, direct, and well-structured using markdown bullets and bold highlights.
 - If the user asks about an element or action on the page, tell them clearly where to look or what to click.`;
 

@@ -257,13 +257,45 @@
   to { transform: rotate(360deg); }
 }
 
-/* E-Commerce Product Insight Card */
+/* Universal Semantic Entity Insight Card */
 .wayfinder-product-banner {
   background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
   border: 1px solid #ddd6fe;
   border-radius: 10px;
   padding: 11px 12px;
   margin-bottom: 12px;
+}
+
+.wayfinder-product-banner.wayfinder-entity-flight {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-color: #bae6fd;
+}
+.wayfinder-product-banner.wayfinder-entity-flight .wayfinder-product-badge {
+  background: #0284c7;
+}
+
+.wayfinder-product-banner.wayfinder-entity-stay {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border-color: #a7f3d0;
+}
+.wayfinder-product-banner.wayfinder-entity-stay .wayfinder-product-badge {
+  background: #059669;
+}
+
+.wayfinder-product-banner.wayfinder-entity-shopping {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  border-color: #ddd6fe;
+}
+.wayfinder-product-banner.wayfinder-entity-shopping .wayfinder-product-badge {
+  background: #7c3aed;
+}
+
+.wayfinder-product-banner.wayfinder-entity-docs {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #fde68a;
+}
+.wayfinder-product-banner.wayfinder-entity-docs .wayfinder-product-badge {
+  background: #d97706;
 }
 
 .wayfinder-product-badge {
@@ -277,6 +309,18 @@
   padding: 2px 7px;
   border-radius: 4px;
   margin-bottom: 5px;
+}
+
+.wayfinder-intent-subtag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4338ca;
+  background: #e0e7ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-bottom: 6px;
 }
 
 .wayfinder-product-name {
@@ -293,6 +337,7 @@
 
 .wayfinder-product-stats {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
@@ -308,6 +353,17 @@
 .wayfinder-product-rating {
   color: #b45309;
   font-weight: 600;
+}
+
+.wayfinder-product-dates,
+.wayfinder-product-location {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
 }
 
 .wayfinder-product-reviews {

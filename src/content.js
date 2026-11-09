@@ -94,7 +94,7 @@
       `Current URL: ${window.location.href}`,
       `Page Title: ${document.title || "Untitled"}`,
       `Domain: ${window.location.hostname}`,
-      `Detected E-Commerce: ${extractProductInfo() ? "YES (" + JSON.stringify(extractProductInfo()) + ")" : "NO"}`,
+      `Detected Semantic Entity: ${extractSemanticEntity() ? "YES (" + JSON.stringify(extractSemanticEntity()) + ")" : "NO"}`,
       "",
       "--- SETTINGS & AI CONFIGURATION ---",
       `Enabled: ${bgSettings.enabled !== false}`,
@@ -146,43 +146,161 @@
   }
 
   /**
-   * 1. Extract context from DOM & Domain-specific detection
+   * 1. Universal Semantic Entity Extraction (Zero domain hardcoding)
+   * Inspects Schema.org JSON-LD microdata, OpenGraph tags, and universal DOM cues.
    */
-  function extractProductInfo() {
-    const isAmazon = window.location.hostname.includes("amazon");
-    const isEcom = isAmazon ||
-      window.location.hostname.includes("bestbuy") ||
-      window.location.hostname.includes("walmart") ||
-      window.location.hostname.includes("ebay") ||
-      window.location.hostname.includes("target") ||
-      Boolean(document.querySelector('[itemtype*="Product"], [data-asin], #productTitle, .product-title, .price, .a-price'));
+  function extractJsonLdEntity() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      try {
+        const raw = JSON.parse(script.textContent);
+        const items = Array.isArray(raw) ? raw : (raw["@graph"] ? raw["@graph"] : [raw]);
+        for (const item of items) {
+          if (!item || !item["@type"]) continue;
+          const typeStr = Array.isArray(item["@type"]) ? item["@type"].join(" ") : String(item["@type"]);
+          const t = typeStr.toLowerCase();
 
-    if (!isEcom) return null;
+          // 1. Stays, Hotels, Vacation Rentals
+          if (t.includes("hotel") || t.includes("lodging") || t.includes("accommodation") || t.includes("resort") || t.includes("vacationrental")) {
+            return {
+              category: "stay",
+              name: item.name || item.headline || "",
+              price: item.priceRange || (item.offers ? (item.offers.price ? `${item.offers.priceCurrency || '$'}${item.offers.price}` : "") : ""),
+              rating: item.aggregateRating?.ratingValue ? `${item.aggregateRating.ratingValue}/5` : "",
+              reviewsCount: item.aggregateRating?.reviewCount ? `${item.aggregateRating.reviewCount} reviews` : "",
+              location: typeof item.address === "string" ? item.address : (item.address?.addressLocality || item.address?.streetAddress || "")
+            };
+          }
 
-    const titleEl = document.querySelector("#productTitle, h1.product-title, [data-automation-id='product-title'], h1");
-    const priceEl = document.querySelector("#priceblock_ourprice, #priceblock_dealprice, .a-price .a-offscreen, #corePrice_feature_div .a-offscreen, .price, [itemprop='price']");
-    const ratingEl = document.querySelector("#acrPopover, #averageCustomerReviews, .a-icon-star, .rating-score, [itemprop='ratingValue']");
-    const reviewCountEl = document.querySelector("#acrCustomerReviewText, .total-review-count, [itemprop='reviewCount']");
-    const availabilityEl = document.querySelector("#availability, [data-feature-name='availability']");
+          // 2. Flights, Airlines, Travel
+          if (t.includes("flight") || t.includes("trip") || t.includes("travelaction") || t.includes("flightreservation")) {
+            const dep = item.departureAirport?.name || item.departureAirport?.iataCode || "";
+            const arr = item.arrivalAirport?.name || item.arrivalAirport?.iataCode || "";
+            return {
+              category: "flight",
+              name: item.name || (dep && arr ? `${dep} → ${arr}` : "Flight Route"),
+              price: item.offers?.price ? `${item.offers.priceCurrency || '$'}${item.offers.price}` : "",
+              location: dep && arr ? `${dep} to ${arr}` : "",
+              dates: item.departureTime ? String(item.departureTime) : ""
+            };
+          }
 
-    const info = {
-      isEcommerce: true,
-      productName: titleEl ? titleEl.innerText.trim() : "",
-      price: priceEl ? priceEl.innerText.trim() : "",
-      rating: ratingEl ? (ratingEl.getAttribute("title") || ratingEl.innerText).trim() : "",
-      reviewsCount: reviewCountEl ? reviewCountEl.innerText.trim() : "",
-      inStock: availabilityEl ? availabilityEl.innerText.trim() : ""
+          // 3. Products, Shopping, E-Commerce
+          if (t.includes("product") || t.includes("itempage")) {
+            const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
+            return {
+              category: "shopping",
+              name: item.name || "",
+              price: offers?.price ? `${offers.priceCurrency || '$'}${offers.price}` : "",
+              rating: item.aggregateRating?.ratingValue ? `${item.aggregateRating.ratingValue}/5` : "",
+              reviewsCount: item.aggregateRating?.reviewCount ? `${item.aggregateRating.reviewCount} reviews` : "",
+              inStock: offers?.availability?.includes("InStock") ? "In Stock" : ""
+            };
+          }
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  function extractSemanticEntity() {
+    const jsonLd = extractJsonLdEntity();
+    if (jsonLd && (jsonLd.name || jsonLd.price)) {
+      jsonLd.productName = jsonLd.name; // Backwards compatibility
+      jsonLd.isEcommerce = jsonLd.category === "shopping";
+      return jsonLd;
+    }
+
+    // Dynamic heuristic detection across title, meta tags, and URL
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") ||
+                     document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
+    const pageText = `${window.location.href} ${document.title} ${metaDesc}`.toLowerCase();
+
+    let category = "general";
+    if (/flight|airline|skyscanner|kayak|depart|layover|roundtrip|one-way|boarding/.test(pageText)) {
+      category = "flight";
+    } else if (/hotel|stay|airbnb|booking|hostel|resort|check-in|check-out|villa|apartment|lodging/.test(pageText)) {
+      category = "stay";
+    } else if (/cart|add to cart|buy now|price|shop|store|checkout|in stock|item/.test(pageText) || document.querySelector("button[name*='cart'], input[name*='cart'], [class*='cart']")) {
+      category = "shopping";
+    } else if (/docs|documentation|guide|api|reference|sdk|tutorial/.test(pageText)) {
+      category = "docs";
+    }
+
+    // Extract Title / Headline
+    const headingEl = document.querySelector("#productTitle, h1.product-title, [data-automation-id='product-title'], main h1, h1");
+    const name = headingEl ? headingEl.innerText.trim() : (document.title || "").trim();
+
+    // Extract Price / Fare
+    let price = "";
+    const priceEl = document.querySelector("#priceblock_ourprice, #priceblock_dealprice, .a-price .a-offscreen, #corePrice_feature_div .a-offscreen, .priceToPay, .price, [class*='price'], [class*='fare'], [class*='rate'], [itemprop='price']");
+    if (priceEl) {
+      const pText = priceEl.innerText.trim();
+      const match = pText.match(/[$€£¥₹]\s*[\d,]+(?:\.\d{2})?/);
+      if (match) {
+        price = match[0];
+      } else if (pText.length > 0 && pText.length < 25) {
+        price = pText;
+      }
+    }
+
+    // Extract Rating / Stars
+    let rating = "";
+    const ratingEl = document.querySelector("#acrPopover, #averageCustomerReviews, .a-icon-star, .rating-score, [class*='rating'], [class*='star'], [itemprop='ratingValue']");
+    if (ratingEl) {
+      rating = (ratingEl.getAttribute("title") || ratingEl.getAttribute("aria-label") || ratingEl.innerText).trim();
+    }
+
+    // Extract Reviews Count
+    let reviewsCount = "";
+    const reviewEl = document.querySelector("#acrCustomerReviewText, .total-review-count, [class*='review-count'], [itemprop='reviewCount']");
+    if (reviewEl) {
+      reviewsCount = reviewEl.innerText.trim();
+    }
+
+    // Extract Dates
+    let dates = "";
+    const dateEl = document.querySelector("[class*='date'], [class*='calendar'], [class*='checkin'], [class*='depart'], [data-testid*='date']");
+    if (dateEl) {
+      dates = dateEl.innerText.trim().slice(0, 45);
+    }
+
+    // Extract Location / Destination
+    let location = "";
+    const locEl = document.querySelector("[class*='location'], [class*='address'], [class*='destination'], [class*='city'], [class*='airport']");
+    if (locEl) {
+      location = locEl.innerText.trim().slice(0, 50);
+    }
+
+    // Only return if we found identifiable semantic markers
+    if (!name && !price && !rating && category === "general") {
+      return null;
+    }
+
+    return {
+      category,
+      name,
+      productName: name, // Backwards compatibility
+      price,
+      rating,
+      reviewsCount,
+      dates,
+      location,
+      isEcommerce: category === "shopping"
     };
+  }
 
-    if (!info.productName && !info.price) return null;
-    return info;
+  // Backwards compatibility alias
+  function extractProductInfo() {
+    return extractSemanticEntity();
   }
 
   function extractPageContext() {
     const title = document.title || "";
     const url = window.location.href;
     const domain = window.location.hostname;
-    const productInfo = extractProductInfo();
+    const semanticEntity = extractSemanticEntity();
+    const productInfo = semanticEntity; // Backwards compatibility
 
     const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") ||
                      document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
@@ -194,7 +312,7 @@
     document.querySelectorAll("button, a.btn, a.button, input[type='submit'], [role='button'], nav a").forEach((el, idx) => {
       if (idx < 15) {
         const text = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
-        if (text && text.length < 50 && !el.closest("#wayfinder-hud-root")) {
+        if (text && text.length < 50 && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
           actionElements.push({
             text,
             tag: el.tagName.toLowerCase(),
@@ -216,7 +334,7 @@
 
     const relatedLinks = [];
     const seenHrefs = new Set();
-    const linkKeywords = ["review", "spec", "compare", "price", "pricing", "feature", "manual", "doc", "alternative", "seller", "warranty", "return", "guide", "faq"];
+    const linkKeywords = ["review", "spec", "compare", "price", "pricing", "feature", "manual", "doc", "alternative", "seller", "warranty", "return", "guide", "faq", "flight", "hotel", "stay", "book", "fare", "cancel", "policy"];
 
     document.querySelectorAll("a[href]").forEach((a) => {
       if (relatedLinks.length >= 6) return;
@@ -238,7 +356,7 @@
       }
     });
 
-    return { title, url, domain, metaDescription: metaDesc, headings, actionElements, condensedText, productInfo, relatedLinks };
+    return { title, url, domain, metaDescription: metaDesc, headings, actionElements, condensedText, semanticEntity, productInfo, relatedLinks };
   }
 
   function generateSimpleSelector(el) {
@@ -514,7 +632,26 @@
 
     if (badge) badge.style.display = "block";
 
-    const productInfo = extractProductInfo();
+    const entity = extractSemanticEntity();
+
+    let categoryBadge = "🧭 Page Intel";
+    let categoryClass = "wayfinder-entity-general";
+    const category = entity?.category || "general";
+    const inferredIntentLower = (guidance.inferredIntent || "").toLowerCase();
+
+    if (category === "flight" || inferredIntentLower.includes("flight") || inferredIntentLower.includes("airline")) {
+      categoryBadge = "✈️ Flight & Travel Intel";
+      categoryClass = "wayfinder-entity-flight";
+    } else if (category === "stay" || inferredIntentLower.includes("hotel") || inferredIntentLower.includes("stay") || inferredIntentLower.includes("lodging") || inferredIntentLower.includes("resort") || inferredIntentLower.includes("airbnb")) {
+      categoryBadge = "🏡 Stay & Lodging Intel";
+      categoryClass = "wayfinder-entity-stay";
+    } else if (category === "shopping" || inferredIntentLower.includes("product") || inferredIntentLower.includes("price") || inferredIntentLower.includes("buy") || inferredIntentLower.includes("deal")) {
+      categoryBadge = "🛍️ Product & Value Intel";
+      categoryClass = "wayfinder-entity-shopping";
+    } else if (category === "docs" || inferredIntentLower.includes("doc") || inferredIntentLower.includes("api") || inferredIntentLower.includes("code")) {
+      categoryBadge = "💻 Tech & Documentation Intel";
+      categoryClass = "wayfinder-entity-docs";
+    }
 
     const recsHtml = (guidance.recommendations || [])
       .map(rec => `<li><span class="wayfinder-bullet">✦</span> ${escapeHtml(rec)}</li>`)
@@ -528,23 +665,26 @@
     `).join("");
 
     cardBody.innerHTML = `
-      ${productInfo ? `
-        <div class="wayfinder-product-banner">
-          <div class="wayfinder-product-badge">🛍️ E-Commerce Insight</div>
-          <div class="wayfinder-product-name">${escapeHtml(productInfo.productName || "Product Detected")}</div>
+      ${entity ? `
+        <div class="wayfinder-product-banner ${categoryClass}">
+          <div class="wayfinder-product-badge">${categoryBadge}</div>
+          <div class="wayfinder-product-name">${escapeHtml(entity.name || "Identified Target")}</div>
           <div class="wayfinder-product-stats">
-            ${productInfo.price ? `<span class="wayfinder-product-price">${escapeHtml(productInfo.price)}</span>` : ""}
-            ${productInfo.rating ? `<span class="wayfinder-product-rating">⭐ ${escapeHtml(productInfo.rating)}</span>` : ""}
-            ${productInfo.reviewsCount ? `<span class="wayfinder-product-reviews">(${escapeHtml(productInfo.reviewsCount)})</span>` : ""}
+            ${entity.price ? `<span class="wayfinder-product-price">${escapeHtml(entity.price)}</span>` : ""}
+            ${entity.rating ? `<span class="wayfinder-product-rating">⭐ ${escapeHtml(entity.rating)}</span>` : ""}
+            ${entity.reviewsCount ? `<span class="wayfinder-product-reviews">(${escapeHtml(entity.reviewsCount)})</span>` : ""}
+            ${entity.dates ? `<span class="wayfinder-product-dates">📅 ${escapeHtml(entity.dates)}</span>` : ""}
+            ${entity.location ? `<span class="wayfinder-product-location">📍 ${escapeHtml(entity.location)}</span>` : ""}
           </div>
           <button class="wayfinder-ecom-cta-btn" id="wayfinder-product-deals-btn">
-            🔍 Check cheaper alternatives & price history (⌘I)
+            🔍 Copilot Analysis, Gotchas & Alternatives (⌘I)
           </button>
         </div>
       ` : ""}
 
       <div class="wayfinder-summary-box">
         <div class="wayfinder-meta-tag">Goal: ${escapeHtml(guidance.pageGoal || "Navigation")}</div>
+        ${guidance.inferredIntent ? `<div class="wayfinder-intent-subtag">🎯 Inferred Intent: ${escapeHtml(guidance.inferredIntent)}</div>` : ""}
         <p class="wayfinder-summary-text">${escapeHtml(guidance.summary || "Page scanned.")}</p>
       </div>
 
@@ -552,17 +692,17 @@
         <div class="wayfinder-intent-box">
           <div class="wayfinder-intent-header">
             <span class="wayfinder-intent-icon">🧠</span>
-            <strong>Copilot Intent Analysis & How I Can Help</strong>
+            <strong>Copilot Cognitive Reasoning ("How I Can Help")</strong>
           </div>
           <p class="wayfinder-intent-text">${escapeHtml(guidance.copilotThinking)}</p>
         </div>
       ` : ""}
 
-      ${(guidance.marketInsights && guidance.marketInsights.length > 0) ? `
+      ${((guidance.proactiveInsights && guidance.proactiveInsights.length > 0) || (guidance.marketInsights && guidance.marketInsights.length > 0)) ? `
         <div class="wayfinder-section">
-          <div class="wayfinder-section-title">🌐 Autonomous Market & Competitor Intelligence</div>
+          <div class="wayfinder-section-title">⚡ Autonomous Proactive Advice & Gotchas</div>
           <ul class="wayfinder-intel-list">
-            ${guidance.marketInsights.map(m => `<li><span class="wayfinder-bullet">💡</span> <span>${escapeHtml(m)}</span></li>`).join("")}
+            ${(guidance.proactiveInsights || guidance.marketInsights || []).map(m => `<li><span class="wayfinder-bullet">💡</span> <span>${escapeHtml(m)}</span></li>`).join("")}
           </ul>
         </div>
       ` : ""}
@@ -621,10 +761,13 @@
     }
 
     const dealsBtn = cardBody.querySelector("#wayfinder-product-deals-btn");
-    if (dealsBtn && productInfo) {
+    if (dealsBtn && entity) {
       dealsBtn.addEventListener("click", () => {
-        toggleChatbox(true, `Product: ${productInfo.productName} (${productInfo.price})`);
-        sendChatMessage("Can I find this product cheaper elsewhere, or what are historical price trends and good alternative brands?");
+        const catPrompt = entity.category === "flight" ? "What hidden baggage fees, layover risks, or cheaper alternative dates should I watch out for?" :
+                          entity.category === "stay" ? "What hidden cleaning fees, cancellation deadlines, or neighborhood safety gotchas should I know?" :
+                          "Can I find this cheaper elsewhere, or what are historical price trends and good alternatives?";
+        toggleChatbox(true, `${entity.category.toUpperCase()}: ${entity.name} (${entity.price || ''})`);
+        sendChatMessage(catPrompt);
       });
     }
 
@@ -747,27 +890,31 @@
     const candidates = [];
     const seen = new Set();
 
-    // 1. Domain-specific E-Commerce high-value elements (Amazon, BestBuy, Walmart, etc.)
-    const ecomRules = [
+    // 1. Universal Semantic High-Value Elements (Price/Fare, Actions, Reviews, Policies, Dates)
+    const universalRules = [
       {
-        sel: "#corePriceDisplay_desktop_feature_div, #corePrice_feature_div, .priceToPay, .apexPriceToPay, #priceblock_ourprice, #priceblock_dealprice, #price, .product-price, [itemprop='price'], .a-price:not(.a-offscreen)",
-        note: "Price: Check historical price trends or cheaper alternatives (⌘I)"
+        sel: "[class*='price'], [class*='fare'], [class*='rate'], [itemprop='price'], .priceToPay, .apexPriceToPay, #priceblock_ourprice, #priceblock_dealprice, #price, [data-testid*='price']",
+        note: "Price / Fare: Check for hidden fees, price changes, or cheaper alternatives (⌘I)"
       },
       {
-        sel: "#add-to-cart-button, #buy-now-button, #addToCart, #buyNow, input[name='submit.add-to-cart'], button.add-to-cart, #exportsUndeliverable-cart-announce",
-        note: "Purchase Action: Compare seller ratings & return policies before buying"
+        sel: "button[type='submit'], [class*='book'], [class*='reserve'], [class*='add-to-cart'], [class*='buy'], [id*='book'], [id*='cart'], [id*='buy'], [data-testid*='book'], [data-testid*='buy'], #add-to-cart-button, #buy-now-button",
+        note: "Key Action: Compare terms, cancellation policy, or return window before confirming"
       },
       {
-        sel: "#acrCustomerReviewText, #averageCustomerReviews, #reviewsMedley, [data-hook='total-review-count']",
-        note: "Customer Reviews: Ask Copilot (⌘I) to summarize sentiment & flaws"
+        sel: "[class*='review'], [class*='rating'], [id*='review'], [id*='rating'], [data-hook='total-review-count'], [data-testid*='review'], #averageCustomerReviews",
+        note: "Customer Feedback: Copilot (⌘I) can summarize sentiment, defect patterns & gotchas"
       },
       {
-        sel: "#feature-bullets, #technicalSpecifications_section_1, #productOverview_feature_div, .specs, .features",
-        note: "Specifications: Key product details and features"
+        sel: "[class*='amenit'], [class*='policy'], [class*='cancel'], [class*='baggage'], [class*='spec'], [class*='feature'], [id*='policy'], [id*='amenit'], #feature-bullets",
+        note: "Policies & Details: Check baggage allowance, cancellation deadlines, or prerequisites"
+      },
+      {
+        sel: "[class*='date'], [class*='calendar'], [class*='schedule'], [class*='depart'], [class*='checkin'], [data-testid*='date']",
+        note: "Timeline / Dates: Verify flexibility, layover times, or off-peak savings"
       }
     ];
 
-    for (const rule of ecomRules) {
+    for (const rule of universalRules) {
       try {
         const elements = Array.from(document.querySelectorAll(rule.sel));
         for (let el of elements) {
@@ -775,8 +922,8 @@
           const rect = el.getBoundingClientRect();
           if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
 
-          // If target is inside an Amazon button container, attach to the outer visible button
-          const outerBtn = el.closest(".a-button");
+          // If target is inside a button container or wrapper, attach to the outer visible element
+          const outerBtn = el.closest(".a-button, button, [role='button']");
           if (outerBtn) el = outerBtn;
 
           if (!seen.has(el) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
@@ -805,7 +952,7 @@
           const rect = el.getBoundingClientRect();
           if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
 
-          const outerBtn = el.closest(".a-button");
+          const outerBtn = el.closest(".a-button, button, [role='button']");
           if (outerBtn) el = outerBtn;
 
           if (seen.has(el) || el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover") || el.closest("#wayfinder-chat-root")) continue;
@@ -841,11 +988,11 @@
       effectiveItems = getHeuristicDomCandidates();
     }
 
-    // On e-commerce sites (like Amazon), if fewer than 3 items, also include key heuristic candidates
-    const productInfo = extractProductInfo();
-    if (productInfo && effectiveItems.length < 3) {
-      const ecomCandidates = getHeuristicDomCandidates();
-      effectiveItems = [...effectiveItems, ...ecomCandidates];
+    // On high-interest pages (flights, stays, products), if fewer than 3 items, include key candidates
+    const semanticEntity = extractSemanticEntity();
+    if (semanticEntity && effectiveItems.length < 3) {
+      const candidates = getHeuristicDomCandidates();
+      effectiveItems = [...effectiveItems, ...candidates];
     }
 
     if (!effectiveItems || !effectiveItems.length) {
@@ -1127,7 +1274,34 @@
       badge.style.background = "#ef4444";
     }
     if (!cardBody) return;
+
+    const entity = extractSemanticEntity();
+    let bannerHtml = "";
+    if (entity) {
+      const catBadge = entity.category === "flight" ? "✈️ Flight & Travel Intel" :
+                       entity.category === "stay" ? "🏡 Stay & Lodging Intel" :
+                       entity.category === "shopping" ? "🛍️ Product & Value Intel" :
+                       entity.category === "docs" ? "💻 Tech & Documentation Intel" : "🧭 Page Intel";
+      const catClass = `wayfinder-entity-${entity.category || 'general'}`;
+      bannerHtml = `
+        <div class="wayfinder-product-banner ${catClass}">
+          <div class="wayfinder-product-badge">${catBadge}</div>
+          <div class="wayfinder-product-name">${escapeHtml(entity.name || "Identified Target")}</div>
+          <div class="wayfinder-product-stats">
+            ${entity.price ? `<span class="wayfinder-product-price">${escapeHtml(entity.price)}</span>` : ""}
+            ${entity.rating ? `<span class="wayfinder-product-rating">⭐ ${escapeHtml(entity.rating)}</span>` : ""}
+            ${entity.dates ? `<span class="wayfinder-product-dates">📅 ${escapeHtml(entity.dates)}</span>` : ""}
+            ${entity.location ? `<span class="wayfinder-product-location">📍 ${escapeHtml(entity.location)}</span>` : ""}
+          </div>
+          <button class="wayfinder-ecom-cta-btn" id="wayfinder-product-deals-btn">
+            🔍 Copilot Analysis, Gotchas & Alternatives (⌘I)
+          </button>
+        </div>
+      `;
+    }
+
     cardBody.innerHTML = `
+      ${bannerHtml}
       <div class="wayfinder-error-state">
         <div class="wayfinder-error-icon">⚠️</div>
         <div class="wayfinder-error-title">AI Guidance Notice</div>
@@ -1149,6 +1323,17 @@
         </button>
       </div>
     `;
+
+    const dealsBtn = cardBody.querySelector("#wayfinder-product-deals-btn");
+    if (dealsBtn && entity) {
+      dealsBtn.addEventListener("click", () => {
+        const catPrompt = entity.category === "flight" ? "What hidden baggage fees, layover risks, or cheaper alternative dates should I watch out for?" :
+                          entity.category === "stay" ? "What hidden cleaning fees, cancellation deadlines, or neighborhood safety gotchas should I know?" :
+                          "Can I find this cheaper elsewhere, or what are historical price trends and good alternatives?";
+        toggleChatbox(true, `${entity.category.toUpperCase()}: ${entity.name} (${entity.price || ''})`);
+        sendChatMessage(catPrompt);
+      });
+    }
 
     const errCopyBtn = document.getElementById("wayfinder-copy-logs-err-btn");
     if (errCopyBtn) {
@@ -1309,9 +1494,13 @@
       } else if (sel) {
         setChatContext(sel);
       } else {
-        const product = extractProductInfo();
-        if (product) {
-          setChatContext(`Product: ${product.productName || "Item"} (${product.price || ""})`);
+        const entity = extractSemanticEntity();
+        if (entity) {
+          const catLabel = entity.category === "flight" ? "Flight" :
+                           entity.category === "stay" ? "Stay" :
+                           entity.category === "shopping" ? "Product" :
+                           entity.category === "docs" ? "Docs" : "Entity";
+          setChatContext(`${catLabel}: ${entity.name || "Target"} ${entity.price ? '(' + entity.price + ')' : ''}`);
         }
       }
 
@@ -1341,22 +1530,43 @@
     const chipsContainer = document.getElementById("wayfinder-chat-quick-chips");
     if (!chipsContainer) return;
 
-    const product = extractProductInfo();
+    const entity = extractSemanticEntity();
     let prompts = [];
 
-    if (product) {
+    if (entity?.category === "flight") {
+      prompts = [
+        "✈️ Hidden baggage & seat fees?",
+        "📉 Layover risks & flight traps",
+        "🔄 Cheaper alternative dates?",
+        "⭐ Airline reliability & reviews"
+      ];
+    } else if (entity?.category === "stay") {
+      prompts = [
+        "🏡 Hidden cleaning & service fees?",
+        "📍 Neighborhood safety & transit?",
+        "📅 Cancellation policy gotchas?",
+        "⭐ Host review warning signs"
+      ];
+    } else if (entity?.category === "shopping") {
       prompts = [
         "🔍 Cheaper elsewhere?",
         "⭐ Review sentiment & flaws",
         "⚖️ Alternative products",
         "💵 Is this price a deal?"
       ];
+    } else if (entity?.category === "docs") {
+      prompts = [
+        "⚠️ Breaking changes & versions",
+        "📦 Prerequisites & setup steps",
+        "💡 Explain code sample",
+        "🔍 Alternatives & trade-offs"
+      ];
     } else {
       prompts = [
         "📋 Summarize page",
         "🧭 What should I click next?",
-        "💡 Explain key terms",
-        "⚡ Navigation advice"
+        "💡 Explain key terms & catches",
+        "⚡ Proactive recommendations"
       ];
     }
 

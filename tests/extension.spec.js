@@ -8,6 +8,8 @@ const __dirname = path.dirname(__filename);
 const extensionPath = path.resolve(__dirname, '..');
 const configPath = path.resolve(__dirname, 'test.config.json');
 const samplePagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/sample-page.html');
+const flightPagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/flight-booking-page.html');
+const stayPagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/stay-booking-page.html');
 
 test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
   let context;
@@ -390,6 +392,86 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
     // Verify copy logs button exists to access full autonomous research report
     const copyBtn = overlayCard.locator('.wayfinder-copy-logs-btn');
     await expect(copyBtn.first()).toBeVisible({ timeout: 5000 });
+
+    await webPage.close();
+  });
+
+  test('E2E-14: Universal flight intent deduction, entity extraction, and specialized gotcha chips', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(flightPagePath);
+
+    // Verify beacon is injected
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open Beacon card
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    const overlayCard = webPage.locator('.wayfinder-overlay-card');
+    await expect(overlayCard).toBeVisible({ timeout: 5000 });
+
+    // Verify flight entity badge is displayed
+    const flightBadge = overlayCard.locator('.wayfinder-product-badge');
+    await expect(flightBadge).toContainText('Flight & Travel Intel', { timeout: 5000 });
+
+    // Open Copilot Chat
+    const chatBtn = overlayCard.locator('#wayfinder-open-chat-btn');
+    await chatBtn.click();
+
+    const chatRoot = webPage.locator('#wayfinder-chat-root');
+    await expect(chatRoot).toBeVisible({ timeout: 5000 });
+
+    // Verify flight-specific quick prompt chips are rendered
+    const quickChips = chatRoot.locator('.wayfinder-quick-chip');
+    await expect(quickChips.first()).toBeVisible();
+    const chipTexts = await quickChips.allInnerTexts();
+    console.log(`[E2E-14] Flight quick chips: ${JSON.stringify(chipTexts)}`);
+    expect(chipTexts.some(t => t.includes('baggage') || t.includes('Layover') || t.includes('Baggage'))).toBe(true);
+
+    // Close chat
+    const closeBtn = webPage.locator('#wayfinder-chat-close');
+    await closeBtn.click();
+
+    await webPage.close();
+  });
+
+  test('E2E-15: Universal stay/lodging intent deduction, pricing gotchas, and neighborhood chips', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(stayPagePath);
+
+    // Verify beacon is injected
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open Beacon card
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    const overlayCard = webPage.locator('.wayfinder-overlay-card');
+    await expect(overlayCard).toBeVisible({ timeout: 5000 });
+
+    // Verify stay entity badge is displayed
+    const stayBadge = overlayCard.locator('.wayfinder-product-badge');
+    await expect(stayBadge).toContainText('Stay & Lodging Intel', { timeout: 5000 });
+
+    // Open Copilot Chat
+    const chatBtn = overlayCard.locator('#wayfinder-open-chat-btn');
+    await chatBtn.click();
+
+    const chatRoot = webPage.locator('#wayfinder-chat-root');
+    await expect(chatRoot).toBeVisible({ timeout: 5000 });
+
+    // Verify stay-specific quick prompt chips are rendered
+    const quickChips = chatRoot.locator('.wayfinder-quick-chip');
+    await expect(quickChips.first()).toBeVisible();
+    const chipTexts = await quickChips.allInnerTexts();
+    console.log(`[E2E-15] Stay quick chips: ${JSON.stringify(chipTexts)}`);
+    expect(chipTexts.some(t => t.includes('cleaning') || t.includes('safety') || t.includes('Cancellation'))).toBe(true);
+
+    // Close chat
+    const closeBtn = webPage.locator('#wayfinder-chat-close');
+    await closeBtn.click();
 
     await webPage.close();
   });

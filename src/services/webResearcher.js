@@ -1,21 +1,66 @@
 /**
- * Autonomous Background Web Researcher & Link Peeking Engine
- * Performs background research on user intent, searches market comparisons,
- * and peeks high-value on-page links to provide the AI with rich external context.
+ * Universal Autonomous Web Researcher & Link Peeking Engine
+ * Dynamically infers user intent across any category (Flights, Stays, Commerce, Tech, Docs, Portals),
+ * executes background web intelligence queries, and peeks on-page links without hardcoded rules.
  */
 
 export class WebResearcher {
   /**
-   * Fetch comparison and competitor suggestions in the background
+   * Dynamically deduce the best background query and task category from page context
    */
-  static async getComparisonIntelligence(query) {
+  static deduceDynamicResearchTarget(pageContext) {
+    const rawTarget = pageContext?.semanticEntity?.name ||
+                      pageContext?.productInfo?.productName ||
+                      pageContext?.title ||
+                      "";
+
+    // Clean target: strip site suffixes like " - Amazon", " | Skyscanner", " - Airbnb", " :: Best Buy"
+    const cleanTarget = rawTarget
+      .split(/[|:()\[\]]/)[0]
+      .replace(/\s+[-–—]\s+.*$/, "")
+      .trim()
+      .slice(0, 70);
+
+    const combined = `${pageContext?.url || ""} ${pageContext?.title || ""} ${cleanTarget}`.toLowerCase();
+
+    let taskType = "General Navigation";
+    let searchSuffix = "tips guide alternatives";
+
+    if (/flight|airline|skyscanner|layover|airport|roundtrip|one-way/i.test(combined)) {
+      taskType = "Flight & Travel Search";
+      searchSuffix = "baggage fees layover reviews";
+    } else if (/hotel|airbnb|booking|resort|hostel|villa|check-in|lodging|stay/i.test(combined)) {
+      taskType = "Accommodation & Stay Search";
+      searchSuffix = "neighborhood safety reviews hidden fees";
+    } else if (/price|\$|deal|cart|buy|specs|model|headphones|laptop|phone|camera|shoes|gear/i.test(combined) || pageContext?.semanticEntity?.price) {
+      taskType = "Product Evaluation & Buying";
+      searchSuffix = "vs alternatives review defects";
+    } else if (/github|docs|api|framework|library|documentation|tutorial|npm|pypi/i.test(combined)) {
+      taskType = "Developer & Technical Research";
+      searchSuffix = "best practices common issues";
+    } else if (/job|career|salary|hiring|glassdoor|linkedin/i.test(combined)) {
+      taskType = "Career & Job Vetting";
+      searchSuffix = "company reviews culture interview";
+    }
+
+    return {
+      cleanTarget,
+      taskType,
+      searchSuffix
+    };
+  }
+
+  /**
+   * Fetch real-time search suggestions & alternative queries in the background
+   */
+  static async getSearchSuggestions(query, suffix = "") {
     if (!query || query.length < 3) return [];
     try {
-      const q = encodeURIComponent(`${query.slice(0, 60)} vs`);
+      const fullQ = suffix ? `${query.slice(0, 50)} ${suffix.split(" ")[0]}` : query.slice(0, 50);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 2000);
 
-      const res = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&q=${q}`, {
+      const res = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(fullQ)}`, {
         signal: controller.signal
       });
       clearTimeout(timeout);
@@ -23,22 +68,19 @@ export class WebResearcher {
       if (!res.ok) return [];
       const data = await res.json();
       const suggestions = (data && Array.isArray(data[1])) ? data[1] : [];
-      return suggestions.slice(0, 4).map(s => {
-        // Strip out the query prefix if present for clean comparison display
-        return s.replace(new RegExp(`^${query}\\s*(vs\\s*)?`, "i"), "").trim() || s;
-      }).filter(Boolean);
+      return suggestions.slice(0, 4);
     } catch (e) {
       return [];
     }
   }
 
   /**
-   * Search community discussions & tech teardowns (HackerNews Algolia API)
+   * Search community discussions, teardowns, and user reports
    */
   static async getCommunityIntelligence(query) {
     if (!query || query.length < 3) return [];
     try {
-      const q = encodeURIComponent(query.slice(0, 60));
+      const q = encodeURIComponent(query.slice(0, 50));
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 2000);
 
@@ -60,7 +102,7 @@ export class WebResearcher {
   }
 
   /**
-   * Peek an on-page link in the background without navigating
+   * Peek an on-page link in the background without user navigation
    * Extracts title, meta description, and first clean text snippet
    */
   static async peekLink(url) {
@@ -85,19 +127,18 @@ export class WebResearcher {
                         html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
       const description = descMatch ? descMatch[1].trim().replace(/\s+/g, " ") : "";
 
-      // Quick clean snippet of text (strip scripts, styles, tags)
       const cleanText = html
         .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
         .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
         .replace(/<[^>]+>/g, " ")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 300);
+        .slice(0, 260);
 
       return {
         url,
-        title: title || "Linked Document",
-        description: description || cleanText.slice(0, 160)
+        title: title || "Linked Reference",
+        description: description || cleanText.slice(0, 150)
       };
     } catch (e) {
       return null;
@@ -105,23 +146,22 @@ export class WebResearcher {
   }
 
   /**
-   * Gather autonomous research package for the current page context
+   * Autonomously gather task-specific background intelligence for any web page
    */
   static async gatherAutonomousContext(pageContext) {
-    const researchTarget = pageContext.productInfo?.productName || pageContext.title || "";
-    const cleanTarget = researchTarget.split(/[|:()\[\]]/)[0].replace(/\s+-\s+.*$/, "").trim(); // clean primary entity name, preserve model hyphens
+    const { cleanTarget, taskType, searchSuffix } = this.deduceDynamicResearchTarget(pageContext);
 
     const relatedLinks = Array.isArray(pageContext.relatedLinks) ? pageContext.relatedLinks : [];
     const linksToPeek = relatedLinks.slice(0, 2);
 
-    const [comparisonsResult, communityResult, ...linkResults] = await Promise.allSettled([
-      cleanTarget ? this.getComparisonIntelligence(cleanTarget) : Promise.resolve([]),
+    const [suggestionsResult, communityResult, ...linkResults] = await Promise.allSettled([
+      cleanTarget ? this.getSearchSuggestions(cleanTarget, searchSuffix) : Promise.resolve([]),
       cleanTarget ? this.getCommunityIntelligence(cleanTarget) : Promise.resolve([]),
       ...linksToPeek.map(l => this.peekLink(l.url))
     ]);
 
-    const topComparisons = (comparisonsResult.status === "fulfilled" && Array.isArray(comparisonsResult.value))
-      ? comparisonsResult.value
+    const searchSuggestions = (suggestionsResult.status === "fulfilled" && Array.isArray(suggestionsResult.value))
+      ? suggestionsResult.value
       : [];
 
     const communityDiscussions = (communityResult.status === "fulfilled" && Array.isArray(communityResult.value))
@@ -134,11 +174,12 @@ export class WebResearcher {
 
     // Format research report string for LLM userPrompt
     const lines = [];
-    if (topComparisons.length > 0) {
-      lines.push(`- Top Real-Time Market Comparisons / Alternatives: ${topComparisons.map(c => `"${c}"`).join(", ")}`);
+    lines.push(`- Inferred Task Category: ${taskType}`);
+    if (searchSuggestions.length > 0) {
+      lines.push(`- Real-Time Search Trends & Alternatives: ${searchSuggestions.map(c => `"${c}"`).join(", ")}`);
     }
     if (communityDiscussions.length > 0) {
-      lines.push(`- Community Discussions / Teardowns Found: ${communityDiscussions.map(d => `"${d.title}" (${d.points} upvotes)`).join("; ")}`);
+      lines.push(`- Community Intel / User Feedback Found: ${communityDiscussions.map(d => `"${d.title}" (${d.points} pts)`).join("; ")}`);
     }
     if (peekedLinks.length > 0) {
       lines.push("- Peeked Key On-Page Links (Background Context):");
@@ -151,7 +192,8 @@ export class WebResearcher {
 
     return {
       query: cleanTarget,
-      topComparisons,
+      taskType,
+      searchSuggestions,
       communityDiscussions,
       peekedLinks,
       formattedSummary

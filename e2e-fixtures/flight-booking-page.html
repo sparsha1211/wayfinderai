@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Skyscanner Flight Search - Roundtrip JFK to LHR Nonstop</title>
+  <meta name="description" content="Compare cheap flights from New York JFK to London Heathrow LHR with baggage fees, airline layovers, and flexible date options.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FlightReservation",
+    "name": "British Airways BA178 - New York (JFK) to London (LHR)",
+    "departureAirport": {
+      "@type": "Airport",
+      "name": "John F. Kennedy International Airport",
+      "iataCode": "JFK"
+    },
+    "arrivalAirport": {
+      "@type": "Airport",
+      "name": "London Heathrow Airport",
+      "iataCode": "LHR"
+    },
+    "departureTime": "2026-12-15T18:30:00",
+    "offers": {
+      "@type": "Offer",
+      "price": "645.00",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+  <style>
+    body { font-family: sans-serif; padding: 30px; line-height: 1.5; }
+    .flight-card { border: 1px solid #ccc; padding: 20px; border-radius: 8px; max-width: 600px; }
+    .fare-price { font-size: 26px; font-weight: bold; color: #0284c7; }
+    .book-btn { background: #0284c7; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>British Airways Nonstop Flight JFK → LHR</h1>
+    <p>Compare flight times, layovers, and baggage allowances.</p>
+  </header>
+  <main>
+    <div class="flight-card">
+      <div class="flight-route">New York (JFK) to London (LHR)</div>
+      <div class="fare-price">$645.00</div>
+      <div class="flight-dates">Dec 15, 2026 - Dec 22, 2026</div>
+      <button class="book-btn" id="book-flight-cta">Select & Reserve Flight</button>
+      <div class="baggage-policy">Includes 1 personal item. Carry-on: $45. Checked bag: $75.</div>
+      <div class="passenger-reviews">⭐ 4.2 out of 5 (3,420 airline reviews)</div>
+    </div>
+  </main>
+</body>
+</html>
