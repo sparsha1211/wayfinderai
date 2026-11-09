@@ -82,7 +82,8 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
     const statusLabel = popupPage.locator('#testConnectionStatus');
     await expect(statusLabel).toBeVisible();
 
-    await popupPage.waitForTimeout(1500);
+    // Wait until loading finishes
+    await expect(statusLabel).not.toHaveText("⏳ Testing...", { timeout: 10000 });
     const statusText = await statusLabel.innerText();
     console.log(`[E2E] Test Connection Result: ${statusText}`);
     expect(statusText.length).toBeGreaterThan(0);
