@@ -139,12 +139,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     chrome.runtime.sendMessage({
       type: "TEST_PROVIDER_CONNECTION",
       payload: { providerId, apiKey, model, endpoint }
-    }, (res) => {
+    }, async (res) => {
       testConnectionBtn.disabled = false;
       if (res && res.success) {
         testConnectionStatus.className = "test-conn-status status-ok";
         testConnectionStatus.textContent = "✓ Connected successfully!";
-        showToast(`Connected to ${PROVIDERS[providerId]?.name || providerId}!`);
+        showToast(`Connected to ${PROVIDERS[providerId]?.name || providerId}! Auto-saved.`);
+        
+        // Auto-save verified settings immediately so user doesn't have to manually click Save Preferences
+        const curr = await chrome.storage.local.get("wayfinder_settings");
+        const newSettings = curr.wayfinder_settings || { apiKeys: {}, customEndpoints: {}, selectedModels: {} };
+        newSettings.activeProvider = providerId;
+        newSettings.apiKeys = newSettings.apiKeys || {};
+        newSettings.selectedModels = newSettings.selectedModels || {};
+        newSettings.customEndpoints = newSettings.customEndpoints || {};
+        if (PROVIDERS[providerId]?.requiresKey && apiKey) {
+          newSettings.apiKeys[providerId] = apiKey;
+        }
+        if (model) {
+          newSettings.selectedModels[providerId] = model;
+        }
+        if (endpoint) {
+          newSettings.customEndpoints[providerId] = endpoint;
+        }
+        await chrome.storage.local.set({ wayfinder_settings: newSettings });
+
         loadMetrics();
       } else {
         testConnectionStatus.className = "test-conn-status status-err";
