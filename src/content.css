@@ -365,6 +365,85 @@
   line-height: 1.45;
 }
 
+/* Intent Analysis & How I Can Help */
+.wayfinder-intent-box {
+  background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%);
+  border: 1px solid #c4b5fd;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.wayfinder-intent-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #4338ca;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.wayfinder-intent-text {
+  margin: 0;
+  color: #1e1b4b;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+/* Market Intelligence List */
+.wayfinder-intel-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wayfinder-intel-list li {
+  margin-bottom: 6px;
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+/* Peeked Links */
+.wayfinder-peeked-links-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wayfinder-peeked-link-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.wayfinder-peeked-title {
+  color: #4f46e5;
+  font-weight: 600;
+  font-size: 11.5px;
+  text-decoration: none;
+}
+
+.wayfinder-peeked-title:hover {
+  text-decoration: underline;
+}
+
+.wayfinder-peeked-desc {
+  margin: 2px 0 0 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 /* Recommendations */
 .wayfinder-section {
   margin-top: 12px;

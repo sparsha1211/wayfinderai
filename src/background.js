@@ -5,6 +5,7 @@
 
 import { AIService, PROVIDERS } from "./services/aiProviders.js";
 import { PatternLearner } from "./services/patternLearner.js";
+import { WebResearcher } from "./services/webResearcher.js";
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -220,18 +221,28 @@ async function handlePageAssistance(pageContext) {
     patterns = await PatternLearner.getPatternContext();
   }
 
-  const systemPrompt = `You are Wayfinder AI, an intelligent web navigation & product copilot embedded in the browser.
-Your mission is to understand the webpage context (including e-commerce product pages like Amazon, BestBuy, eBay, Walmart, documentation, SaaS tools, and articles), and guide the user with high-value navigational advice, critical product insights, and element annotations.
+  // Autonomous background research: link peeking & market competitor comparison
+  const research = await WebResearcher.gatherAutonomousContext(pageContext);
+
+  const systemPrompt = `You are Wayfinder AI, an intelligent, proactive browser copilot.
+Your mission is to understand:
+1. WHAT IS THE USER TRYING TO DO? (Infer their primary goal, doubts, and decision tradeoffs on this page).
+2. HOW CAN I ACTIVELY HELP THEM? (Think through what the user needs right now: price checks, hidden catches, comparison with alternatives, or navigation shortcuts).
+3. PROACTIVE ADVICE & ELEMENT ANNOTATIONS: Guide the user with concrete advice and annotate DOM items directly.
 
 Special Domain Instructions:
-- If this is an E-COMMERCE page (e.g. Amazon, Walmart, BestBuy): Evaluate the product thoroughly. In your summary and recommendations, highlight price/value caveats, suggest if it can be found cheaper elsewhere or on alternative sites (or price tracker tools like CamelCamelCamel/Keepa), flag review rating anomalies or key specifications, and annotate buy/review/price elements.
+- If this is an E-COMMERCE page (e.g. Amazon, Walmart, BestBuy): Evaluate the product thoroughly. Highlight price/value caveats, compare with known alternatives, flag review rating anomalies or key specifications, and annotate buy/review/price elements.
 - If this is a DOCS/TECH page: Emphasize quickstarts, code samples, API tables, and versions.
 - If this is GENERAL CONTENT: Summarize core takeaway and primary action items.
 
 You MUST respond strictly with valid JSON conforming to this schema:
 {
   "summary": "1-2 sentence executive summary of this page's purpose, status, or product overview",
-  "pageGoal": "Inferred goal user likely has on this page (e.g. 'Evaluating Sony Headphones Deal', 'Researching API docs')",
+  "pageGoal": "Inferred goal user likely has on this page (e.g. 'Deciding between Sony WH-1000XM5 and Bose QC Ultra for travel')",
+  "copilotThinking": "1-2 sentence internal thought breakdown of what the user is weighing and how you actively help them make the best decision",
+  "marketInsights": [
+    "Key comparison or pricing caveat synthesized from autonomous research (e.g. 'Bose QC Ultra offers folding hinges; check historical pricing on Keepa/Camel before checkout')"
+  ],
   "recommendations": [
     "Concrete, high-value navigation or decision tip (e.g., 'Check price history on CamelCamelCamel or alternative seller before checkout')",
     "Secondary hint or shortcut relevant to their goal"
@@ -270,11 +281,14 @@ You MUST respond strictly with valid JSON conforming to this schema:
 - Interactive Form / Action Elements: ${JSON.stringify(pageContext.actionElements || [])}
 - Condensed Body Text Snippet: ${pageContext.condensedText || ""}
 
+Autonomous Background Web Research & Link Peek Context:
+${research.formattedSummary}
+
 Learned User Navigation Patterns:
 - Top Visited Domains: ${patterns.topDomains.join(", ") || "None"}
 - Discovered Interests: ${patterns.topInterests.join(", ") || "General browsing"}
 
-Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, links, headings) and provide clear navigation guidance.`;
+Think carefully about what the user is trying to accomplish and how you can proactively help them. Identify 2-4 interesting items on the DOM (buttons, links, headings) and provide clear navigation guidance.`;
 
   const startTime = Date.now();
   console.log(`[Wayfinder Service Worker] Requesting page assistance for ${pageContext?.url} via ${providerId} (${model})`);
@@ -311,7 +325,8 @@ Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, l
         systemPrompt,
         userPrompt
       },
-      response: guidance
+      response: guidance,
+      research
     });
 
     return {
@@ -319,6 +334,7 @@ Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, l
       provider: providerId,
       model,
       guidance,
+      research,
       usage,
       prompts: {
         systemPrompt,
@@ -466,6 +482,14 @@ Your role:
     historyContext = "\n\nPrevious Conversation:\n" + chatHistory.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join("\n");
   }
 
+  let researchContext = "";
+  if (pageContext) {
+    const research = await WebResearcher.gatherAutonomousContext(pageContext);
+    if (research && research.formattedSummary && research.formattedSummary !== "None found within time window.") {
+      researchContext = `\nAutonomous Background Research (Competitors & Link Intelligence):\n${research.formattedSummary}\n`;
+    }
+  }
+
   const userPrompt = `Current Page Information:
 - Page Title: ${pageContext?.title || "Untitled"}
 - URL: ${pageContext?.url || "N/A"}
@@ -473,7 +497,7 @@ Your role:
 ${pageContext?.productInfo ? `- Detected Product Data: ${JSON.stringify(pageContext.productInfo)}` : ""}
 ${selectedText ? `- User Highlighted / Selected Element: """${selectedText}"""` : ""}
 - Key Headings: ${JSON.stringify(pageContext?.headings || [])}
-- Condensed Page Text: ${pageContext?.condensedText ? pageContext.condensedText.slice(0, 1500) : "N/A"}
+- Condensed Page Text: ${pageContext?.condensedText ? pageContext.condensedText.slice(0, 1500) : "N/A"}${researchContext}
 ${historyContext}
 
 User Question:

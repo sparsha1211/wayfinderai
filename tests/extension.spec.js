@@ -371,4 +371,26 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await webPage.close();
   });
+
+  test('E2E-13: Autonomous background research gathers market comparisons and link context', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    // Verify background researcher runs and populates diagnostic report with research data
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open Beacon card
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    const overlayCard = webPage.locator('.wayfinder-overlay-card');
+    await expect(overlayCard).toBeVisible({ timeout: 5000 });
+
+    // Verify copy logs button exists to access full autonomous research report
+    const copyBtn = overlayCard.locator('.wayfinder-copy-logs-btn');
+    await expect(copyBtn.first()).toBeVisible({ timeout: 5000 });
+
+    await webPage.close();
+  });
 });

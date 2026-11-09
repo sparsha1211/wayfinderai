@@ -214,7 +214,31 @@
         .slice(0, 1500);
     }
 
-    return { title, url, domain, metaDescription: metaDesc, headings, actionElements, condensedText, productInfo };
+    const relatedLinks = [];
+    const seenHrefs = new Set();
+    const linkKeywords = ["review", "spec", "compare", "price", "pricing", "feature", "manual", "doc", "alternative", "seller", "warranty", "return", "guide", "faq"];
+
+    document.querySelectorAll("a[href]").forEach((a) => {
+      if (relatedLinks.length >= 6) return;
+      const href = a.href;
+      if (!href || href.startsWith("javascript:") || href.includes("#") || seenHrefs.has(href)) return;
+      if (href === window.location.href) return;
+
+      const text = (a.innerText || a.title || a.getAttribute("aria-label") || "").trim().toLowerCase();
+      const hrefLower = href.toLowerCase();
+      const matchesKeyword = linkKeywords.some(kw => text.includes(kw) || hrefLower.includes(kw));
+
+      if (matchesKeyword && text.length > 2 && text.length < 60) {
+        seenHrefs.add(href);
+        relatedLinks.push({
+          text: a.innerText.trim(),
+          url: href,
+          selector: generateSimpleSelector(a)
+        });
+      }
+    });
+
+    return { title, url, domain, metaDescription: metaDesc, headings, actionElements, condensedText, productInfo, relatedLinks };
   }
 
   function generateSimpleSelector(el) {
@@ -523,6 +547,39 @@
         <div class="wayfinder-meta-tag">Goal: ${escapeHtml(guidance.pageGoal || "Navigation")}</div>
         <p class="wayfinder-summary-text">${escapeHtml(guidance.summary || "Page scanned.")}</p>
       </div>
+
+      ${guidance.copilotThinking ? `
+        <div class="wayfinder-intent-box">
+          <div class="wayfinder-intent-header">
+            <span class="wayfinder-intent-icon">🧠</span>
+            <strong>Copilot Intent Analysis & How I Can Help</strong>
+          </div>
+          <p class="wayfinder-intent-text">${escapeHtml(guidance.copilotThinking)}</p>
+        </div>
+      ` : ""}
+
+      ${(guidance.marketInsights && guidance.marketInsights.length > 0) ? `
+        <div class="wayfinder-section">
+          <div class="wayfinder-section-title">🌐 Autonomous Market & Competitor Intelligence</div>
+          <ul class="wayfinder-intel-list">
+            ${guidance.marketInsights.map(m => `<li><span class="wayfinder-bullet">💡</span> <span>${escapeHtml(m)}</span></li>`).join("")}
+          </ul>
+        </div>
+      ` : ""}
+
+      ${(lastPageAssistanceData?.research?.peekedLinks && lastPageAssistanceData.research.peekedLinks.length > 0) ? `
+        <div class="wayfinder-section">
+          <div class="wayfinder-section-title">🔗 Background Peeked Links</div>
+          <div class="wayfinder-peeked-links-list">
+            ${lastPageAssistanceData.research.peekedLinks.map(l => `
+              <div class="wayfinder-peeked-link-item">
+                <a href="${escapeHtml(l.url)}" target="_blank" class="wayfinder-peeked-title">${escapeHtml(l.title)} ↗</a>
+                <p class="wayfinder-peeked-desc">${escapeHtml(l.description)}</p>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
 
       ${recsHtml ? `
         <div class="wayfinder-section">
