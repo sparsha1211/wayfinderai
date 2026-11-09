@@ -246,19 +246,27 @@ You MUST respond strictly with valid JSON conforming to this schema:
   ],
   "domHighlights": [
     {
-      "selector": "CSS selector if detectable, or generic tag hint",
-      "note": "Helpful prompt tag displayed directly over this area",
+      "selector": "CSS selector if detectable, or generic tag hint (e.g., '#corePriceDisplay_desktop_feature_div', '#add-to-cart-button', '#averageCustomerReviews')",
+      "note": "Concise high-value insight displayed directly in purple badge (e.g. 'Price: Check Keepa/Camel price history', 'Reviews: Check 1-star flaws', 'Add to Cart: Confirm seller & return window')",
       "textHint": "Exact or partial text matching the interesting element"
     }
   ]
 }`;
+
+  const productInfoStr = pageContext.productInfo ? `
+- Detected E-Commerce Product Info:
+  * Name: ${pageContext.productInfo.productName || "N/A"}
+  * Price: ${pageContext.productInfo.price || "N/A"}
+  * Rating: ${pageContext.productInfo.rating || "N/A"}
+  * Review Count: ${pageContext.productInfo.reviewsCount || "N/A"}
+  * Stock: ${pageContext.productInfo.inStock || "N/A"}` : "";
 
   const userPrompt = `Current Page Details:
 - Title: ${pageContext.title || "Untitled"}
 - URL: ${pageContext.url}
 - Domain: ${pageContext.domain}
 - Headings: ${JSON.stringify(pageContext.headings || [])}
-- Meta Description: ${pageContext.metaDescription || "N/A"}
+- Meta Description: ${pageContext.metaDescription || "N/A"}${productInfoStr}
 - Interactive Form / Action Elements: ${JSON.stringify(pageContext.actionElements || [])}
 - Condensed Body Text Snippet: ${pageContext.condensedText || ""}
 
@@ -312,6 +320,10 @@ Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, l
       model,
       guidance,
       usage,
+      prompts: {
+        systemPrompt,
+        userPrompt
+      },
       domMarkersEnabled: wayfinder_settings.domMarkersEnabled !== false
     };
   } catch (error) {
@@ -337,7 +349,14 @@ Analyze this page context. Identify 2-4 interesting items on the DOM (buttons, l
       }
     });
 
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+      prompts: {
+        systemPrompt,
+        userPrompt
+      }
+    };
   }
 }
 

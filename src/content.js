@@ -28,6 +28,7 @@
 
   let currentMarkerStyle = "dot";
   let currentGuidanceItems = [];
+  let lastPageAssistanceData = null;
 
   let lastUrl = window.location.href;
   let hasAnalyzedCurrentPage = false;
@@ -107,6 +108,11 @@
       "--- ON-PAGE DOM MARKERS STATUS ---",
       `Active Markers on Page: ${domMarkers.length}`,
       markerDetails || "  (No markers currently rendered on DOM)",
+      "",
+      "--- ACTIVE AI PROMPT & RAW RESPONSE ---",
+      `System Prompt:\n${lastPageAssistanceData?.prompts?.systemPrompt || "N/A"}\n`,
+      `User Prompt:\n${lastPageAssistanceData?.prompts?.userPrompt || "N/A"}\n`,
+      `Raw Guidance Output:\n${JSON.stringify(lastPageAssistanceData?.guidance || lastPageAssistanceData?.error || "N/A", null, 2)}\n`,
       "",
       "--- RECENT IN-PAGE CONTENT SCRIPT LOGS ---",
       WayfinderLogger.logs.slice(-25).join("\n") || "  (No content logs recorded)",
@@ -453,6 +459,7 @@
         payload: context
       });
 
+      lastPageAssistanceData = response;
       isAnalyzing = false;
 
       if (!response || !response.success) {
@@ -531,6 +538,20 @@
         </div>
       ` : ""}
 
+      ${lastPageAssistanceData?.prompts ? `
+        <details class="wayfinder-prompt-details">
+          <summary class="wayfinder-prompt-toggle">👁️ View Active AI Prompt & Raw Data</summary>
+          <div class="wayfinder-prompt-content">
+            <div class="wayfinder-prompt-label">SYSTEM PROMPT:</div>
+            <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.systemPrompt || "")}</pre>
+            <div class="wayfinder-prompt-label">USER PROMPT SENT TO AI:</div>
+            <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.userPrompt || "")}</pre>
+            <div class="wayfinder-prompt-label">RAW JSON RECEIVED:</div>
+            <pre class="wayfinder-prompt-pre">${escapeHtml(JSON.stringify(guidance, null, 2))}</pre>
+          </div>
+        </details>
+      ` : ""}
+
       <div class="wayfinder-footer-provider">
         <span>Powered by <strong>${escapeHtml(provider)}</strong> (${escapeHtml(model)})</span>
       </div>
@@ -576,11 +597,87 @@
   }
 
   /**
-   * 5. IN-PAGE DOM MARKERS: Purple beacon markers on interesting items with hover & click popovers
+   * 5. IN-PAGE DOM MARKERS: Purple beacon markers & direct purple boxes
+   * Injected into a top-level overlay layer (#wayfinder-markers-layer) directly on document.body.
+   * This completely eliminates clipping from overflow:hidden, contain:paint, or button stacking contexts.
    */
+  function getOrCreateMarkersLayer() {
+    let layer = document.getElementById("wayfinder-markers-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "wayfinder-markers-layer";
+      layer.className = "wayfinder-markers-layer";
+      (document.body || document.documentElement).appendChild(layer);
+    }
+    return layer;
+  }
+
   function clearDomMarkers() {
+    const layer = document.getElementById("wayfinder-markers-layer");
+    if (layer) {
+      layer.innerHTML = "";
+    }
     document.querySelectorAll(".wayfinder-dom-marker").forEach(el => el.remove());
   }
+
+  function positionSingleMarker(marker, target, style) {
+    if (!target || !target.isConnected) {
+      marker.style.display = "none";
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0 && target.offsetParent === null) {
+      marker.style.display = "none";
+      return;
+    }
+
+    marker.style.display = "inline-flex";
+    marker.style.position = "absolute";
+
+    const pageScrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
+    const pageScrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
+
+    if (style === "badge") {
+      let top = pageScrollY + rect.top - 28;
+      let left = pageScrollX + Math.max(0, rect.left);
+      if (rect.top < 34) {
+        top = pageScrollY + rect.bottom + 4;
+        marker.classList.add("wayfinder-callout-below");
+      } else {
+        marker.classList.remove("wayfinder-callout-below");
+      }
+      marker.style.top = `${Math.round(top)}px`;
+      marker.style.left = `${Math.round(left)}px`;
+    } else {
+      let top = pageScrollY + rect.top - 6;
+      let left = pageScrollX + rect.right - 10;
+      marker.style.top = `${Math.round(top)}px`;
+      marker.style.left = `${Math.round(left)}px`;
+    }
+  }
+
+  let positionUpdateTimer = null;
+  function updateAllMarkerPositions() {
+    const layer = document.getElementById("wayfinder-markers-layer");
+    if (!layer) return;
+    const markers = layer.querySelectorAll(".wayfinder-dom-marker");
+    markers.forEach(marker => {
+      const target = marker._targetElement;
+      const style = marker.getAttribute("data-marker-style") || currentMarkerStyle;
+      positionSingleMarker(marker, target, style);
+    });
+  }
+
+  function throttledUpdateMarkerPositions() {
+    if (positionUpdateTimer) return;
+    positionUpdateTimer = requestAnimationFrame(() => {
+      positionUpdateTimer = null;
+      updateAllMarkerPositions();
+    });
+  }
+
+  window.addEventListener("scroll", throttledUpdateMarkerPositions, { passive: true });
+  window.addEventListener("resize", throttledUpdateMarkerPositions, { passive: true });
 
   // Fallback heuristic markers so interesting items are highlighted immediately
   function getHeuristicDomCandidates() {
@@ -675,18 +772,28 @@
   function renderDomMarkers(items) {
     clearDomMarkers();
 
-    let effectiveItems = (items && items.length > 0) ? items : null;
+    let effectiveItems = (items && items.length > 0) ? [...items] : null;
     if (!effectiveItems || effectiveItems.length === 0) {
       WayfinderLogger.log("No specific guidance items provided, falling back to heuristic candidates...");
       effectiveItems = getHeuristicDomCandidates();
     }
+
+    // On e-commerce sites (like Amazon), if fewer than 3 items, also include key heuristic candidates
+    const productInfo = extractProductInfo();
+    if (productInfo && effectiveItems.length < 3) {
+      const ecomCandidates = getHeuristicDomCandidates();
+      effectiveItems = [...effectiveItems, ...ecomCandidates];
+    }
+
     if (!effectiveItems || !effectiveItems.length) {
       WayfinderLogger.warn("No DOM elements found to render markers.");
       return;
     }
 
     currentGuidanceItems = effectiveItems;
+    const layer = getOrCreateMarkersLayer();
     let attachedCount = 0;
+    const seenTargets = new Set();
 
     effectiveItems.forEach((item) => {
       let target = item.element || null;
@@ -697,7 +804,7 @@
 
       const hint = item.targetHint || item.textHint || item.label;
       if (!target && hint) {
-        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit'], [role='button']"));
+        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit'], [role='button'], .price, #productTitle"));
         target = candidates.find(el => {
           const text = (el.innerText || el.value || "").toLowerCase();
           return text.includes(hint.toLowerCase()) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root");
@@ -709,119 +816,104 @@
         if (outerBtn) target = outerBtn;
       }
 
-      if (target && !target.closest("#wayfinder-hud-root") && !target.closest("#wayfinder-chat-root") && !target.querySelector(".wayfinder-dom-marker")) {
-        const marker = document.createElement("div");
-        const noteText = item.note || item.explanation || item.label || "Key navigation item";
+      if (!target || seenTargets.has(target)) return;
+      if (target.closest("#wayfinder-hud-root") || target.closest("#wayfinder-chat-root")) return;
 
-        if (currentMarkerStyle === "badge") {
-          // Direct Purple Box (Inline Callout Box)
-          marker.className = "wayfinder-dom-marker wayfinder-marker-callout";
-          marker.setAttribute("data-marker-style", "badge");
-          marker.title = noteText;
+      const rect = target.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0 && target.offsetParent === null) return;
 
-          marker.innerHTML = `
-            <div class="wayfinder-callout-box">
-              <span class="wayfinder-callout-icon">✦</span>
-              <span class="wayfinder-callout-text">${escapeHtml(noteText)}</span>
-              <button class="wayfinder-callout-chat-btn" title="Ask Copilot about this (⌘I)">💬 Ask</button>
+      seenTargets.add(target);
+
+      const marker = document.createElement("div");
+      marker._targetElement = target;
+      const noteText = item.note || item.explanation || item.label || "Key navigation item";
+
+      if (currentMarkerStyle === "badge") {
+        // Direct Purple Box (Inline Callout Box)
+        marker.className = "wayfinder-dom-marker wayfinder-marker-callout";
+        marker.setAttribute("data-marker-style", "badge");
+        marker.title = noteText;
+
+        marker.innerHTML = `
+          <div class="wayfinder-callout-box">
+            <span class="wayfinder-callout-icon">✦</span>
+            <span class="wayfinder-callout-text">${escapeHtml(noteText)}</span>
+            <button class="wayfinder-callout-chat-btn" title="Ask Copilot about this (⌘I)">💬 Ask</button>
+          </div>
+          <div class="wayfinder-marker-popover">
+            <div class="wayfinder-marker-popover-header">
+              <span class="wayfinder-marker-icon">✦</span>
+              <strong>Wayfinder Insight</strong>
             </div>
-          `;
+            <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
+            <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
+              💬 Ask Copilot <kbd>⌘I</kbd>
+            </button>
+          </div>
+        `;
 
-          const chatBtn = marker.querySelector(".wayfinder-callout-chat-btn");
-          if (chatBtn) {
-            chatBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
-              toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
-            });
-          }
-
-          // Click on callout box also scrolls element into view smoothly if partially obscured
-          marker.addEventListener("click", (e) => {
-            if (!e.target.closest(".wayfinder-callout-chat-btn")) {
-              target.scrollIntoView({ behavior: "smooth", block: "nearest" });
-            }
-          });
-        } else {
-          // Dot Mode with Hover/Click Popover
-          marker.className = "wayfinder-dom-marker wayfinder-marker-dot-mode";
-          marker.setAttribute("data-marker-style", "dot");
-          marker.title = "Wayfinder Insight (Click or hover for details)";
-
-          marker.innerHTML = `
-            <div class="wayfinder-marker-dot"></div>
-            <div class="wayfinder-marker-popover">
-              <div class="wayfinder-marker-popover-header">
-                <span class="wayfinder-marker-icon">✦</span>
-                <strong>Wayfinder Insight</strong>
-              </div>
-              <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
-              <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
-                💬 Ask Copilot <kbd>⌘I</kbd>
-              </button>
-            </div>
-          `;
-
-          // Click on marker opens/toggles popover
-          marker.addEventListener("click", (e) => {
+        const chatBtn = marker.querySelector(".wayfinder-callout-chat-btn");
+        if (chatBtn) {
+          chatBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             e.preventDefault();
-            const popover = marker.querySelector(".wayfinder-marker-popover");
-            if (popover) {
-              popover.classList.toggle("wayfinder-popover-pinned");
-            }
+            const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
+            toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
           });
+        }
 
-          // Chat button opens chatbox with item context
-          const chatBtn = marker.querySelector(".wayfinder-marker-chat-btn");
-          if (chatBtn) {
-            chatBtn.addEventListener("click", (e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
-              toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
-            });
+        // Click on callout box also scrolls element into view smoothly if partially obscured
+        marker.addEventListener("click", (e) => {
+          if (!e.target.closest(".wayfinder-callout-chat-btn")) {
+            target.scrollIntoView({ behavior: "smooth", block: "nearest" });
           }
-        }
+        });
+      } else {
+        // Dot Mode with Hover/Click Popover
+        marker.className = "wayfinder-dom-marker wayfinder-marker-dot-mode";
+        marker.setAttribute("data-marker-style", "dot");
+        marker.title = "Wayfinder Insight (Click or hover for details)";
 
-        // Positioning & preserving UX without breaking page layout
-        const computed = window.getComputedStyle(target);
-        if (computed.position === "static") {
-          target.style.position = "relative";
-        }
+        marker.innerHTML = `
+          <div class="wayfinder-marker-dot"></div>
+          <div class="wayfinder-marker-popover">
+            <div class="wayfinder-marker-popover-header">
+              <span class="wayfinder-marker-icon">✦</span>
+              <strong>Wayfinder Insight</strong>
+            </div>
+            <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
+            <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
+              💬 Ask Copilot <kbd>⌘I</kbd>
+            </button>
+          </div>
+        `;
 
-        // Un-clip parent containers (like Amazon's .a-button-inner or table cells)
-        let curr = target;
-        while (curr && curr !== document.body) {
-          const cs = window.getComputedStyle(curr);
-          if (cs.overflow === "hidden" || cs.overflowX === "hidden" || cs.overflowY === "hidden") {
-            curr.style.setProperty("overflow", "visible", "important");
+        // Click on marker opens/toggles popover
+        marker.addEventListener("click", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const popover = marker.querySelector(".wayfinder-marker-popover");
+          if (popover) {
+            popover.classList.toggle("wayfinder-popover-pinned");
           }
-          curr = curr.parentElement;
-        }
+        });
 
-        // Avoid clipping if element is near top of viewport
-        const rect = target.getBoundingClientRect();
-        if (currentMarkerStyle === "badge" && rect.top < 32) {
-          marker.classList.add("wayfinder-callout-below");
-        }
-
-        // Attach marker
-        try {
-          target.appendChild(marker);
-          attachedCount++;
-          WayfinderLogger.log(`Attached marker #${attachedCount} to <${target.tagName.toLowerCase()}>`, noteText);
-        } catch (e) {
-          // If element doesn't allow children (e.g. input), insert as sibling
-          if (target.parentNode) {
-            target.parentNode.style.position = target.parentNode.style.position === "static" ? "relative" : target.parentNode.style.position;
-            target.parentNode.insertBefore(marker, target.nextSibling);
-            attachedCount++;
-            WayfinderLogger.log(`Attached marker #${attachedCount} as sibling to <${target.tagName.toLowerCase()}>`, noteText);
-          }
+        // Chat button opens chatbox with item context
+        const chatBtn = marker.querySelector(".wayfinder-marker-chat-btn");
+        if (chatBtn) {
+          chatBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
+            toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
+          });
         }
       }
+
+      positionSingleMarker(marker, target, currentMarkerStyle);
+      layer.appendChild(marker);
+      attachedCount++;
+      WayfinderLogger.log(`Attached marker #${attachedCount} to top-level layer for <${target.tagName.toLowerCase()}>`, noteText);
     });
 
     WayfinderLogger.log(`Finished rendering markers. Total attached: ${attachedCount}`);
@@ -978,6 +1070,17 @@
         <div class="wayfinder-error-title">AI Guidance Notice</div>
         <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
         <p class="wayfinder-error-help">Check your API key in the extension popup or verify provider settings.</p>
+        ${lastPageAssistanceData?.prompts?.userPrompt ? `
+          <details class="wayfinder-prompt-details">
+            <summary class="wayfinder-prompt-toggle">👁️ View Active AI Prompt Sent</summary>
+            <div class="wayfinder-prompt-content">
+              <div class="wayfinder-prompt-label">SYSTEM PROMPT:</div>
+              <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.systemPrompt || "")}</pre>
+              <div class="wayfinder-prompt-label">USER PROMPT:</div>
+              <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.userPrompt || "")}</pre>
+            </div>
+          </details>
+        ` : ""}
         <button class="wayfinder-copy-logs-btn" id="wayfinder-copy-logs-err-btn" style="margin-top: 10px; background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px 12px; font-weight: 600; cursor: pointer;">
           📋 Copy Diagnostic Logs
         </button>

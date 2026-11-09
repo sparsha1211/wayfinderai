@@ -140,7 +140,7 @@ export class AIService {
         { role: "user", content: userPrompt }
       ],
       temperature: 0.2,
-      max_tokens: 600
+      max_tokens: 1200
     };
 
     if (responseFormat === "json") {

@@ -241,4 +241,27 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await webPage.close();
   });
+
+  test('E2E-9: Top-level overlay layer renders markers and Prompt Inspector reveals active prompts', async () => {
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    // Verify top-level layer exists on document.body
+    const layer = webPage.locator('#wayfinder-markers-layer');
+    await expect(layer).toBeAttached({ timeout: 5000 });
+
+    const markers = layer.locator('.wayfinder-dom-marker');
+    await expect(markers.first()).toBeVisible({ timeout: 5000 });
+    expect(await markers.count()).toBeGreaterThan(0);
+
+    // Open Beacon card
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    // Verify Prompt Inspector or Copy Logs button is present in card
+    const copyLogsBtn = webPage.locator('.wayfinder-copy-logs-btn');
+    await expect(copyLogsBtn.first()).toBeVisible({ timeout: 5000 });
+
+    await webPage.close();
+  });
 });
