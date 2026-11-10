@@ -650,6 +650,46 @@ input:checked + .slider:before {
   margin: 0;
 }
 
+/* Privacy & Data Handling Notice */
+.privacy-notice-box {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+.privacy-notice-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #166534;
+  font-size: 11.5px;
+  margin-bottom: 4px;
+}
+
+.privacy-icon {
+  font-size: 13px;
+}
+
+.privacy-notice-text {
+  font-size: 11px;
+  color: #334155;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.privacy-notice-text strong {
+  color: #0f172a;
+}
+
+.privacy-notice-text em {
+  font-style: normal;
+  color: #15803d;
+  font-weight: 600;
+}
+
 /* Footer */
 .footer {
   display: flex;

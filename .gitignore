@@ -20,3 +20,5 @@ dist/
 .env
 .env.local
 *.pem
+*.local.json
+tests/test.config.local.json

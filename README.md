@@ -16,10 +16,12 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
    - Seamlessly ask questions using the active page context, inspect elements, or ask about highlighted text.
    - Features quick-prompt suggestion chips (`"Is this price fair?"`, `"Cheaper elsewhere?"`, `"Summarize page"`, `"What should I click next?"`).
 
-3. **🛍️ Domain-Specific E-Commerce Intelligence (Amazon, BestBuy, Walmart, etc.)**:
-   - Specialized product recognition for Amazon and e-commerce shopping.
-   - Extracts product titles, price tags, ratings, review volumes, and buy box elements.
-   - In guidance recommendations and chat, offers critical insights: evaluates price-to-value, flags review sentiment & anomalies, and recommends checking historical price tools (CamelCamelCamel, Keepa, Google Shopping) or alternative merchants.
+3. **🌐 Universal Intent Deduction Engine (Flights, Stays, Shopping, Docs, SaaS)**:
+   - Autonomously deduces what you are trying to do on **any** website without domain hardcoding.
+   - **Flights & Travel**: Highlights baggage traps, layover risks, alternative airports, and date flexibility.
+   - **Stays & Accommodations**: Identifies cleaning/service fee gotchas, cancellation deadlines, and neighborhood safety.
+   - **Shopping & Products**: Evaluates price-to-value, checks review sentiment & defect patterns, and searches competitor pricing.
+   - **Technical Documentation**: Flags version gotchas, breaking changes, and prerequisites.
 
 4. **🟣 Marker Display Mode Toggle: Purple Dots vs. Direct Purple Boxes**:
    - Toggle between two visualization styles on the fly:
@@ -145,8 +147,30 @@ ai_assist_chrome/
 │       ├── popup.html             # Control center UI (Settings, Metrics, Guide, Dev Console)
 │       ├── popup.css              # Clean, modern popup design with dev console styles
 │       └── popup.js               # Settings, Metrics, Test Connection & Debug Logs controller
-└── README.md                      # Documentation & installation guide
+├── LICENSE                        # Open-source MIT License
+├── PRIVACY.md                     # Security & Privacy Policy
+├── README.md                      # Documentation & installation guide
+└── ...
 ```
+
+---
+
+## 🔒 Security, Privacy & Data Handling
+
+Wayfinder AI was designed around user privacy:
+- **Local-First AI (Ollama)**: When using Ollama, 100% of execution happens locally on your computer (`localhost:11434`). Zero web content, URLs, or prompts leave your machine.
+- **External Cloud AI Providers**: When using OpenAI, Claude, Groq, or OpenRouter, page structure and text summaries are transmitted to that provider over encrypted HTTPS under your own API key.
+- **Automatic PII Redaction**: Passwords (`input[type="password"]`), credit cards, CVVs, SSNs, bearer tokens, and form input values are automatically filtered out before transmission.
+- **Zero Telemetry**: No third-party trackers, analytics, or external logging servers.
+- **Sandboxed Credentials**: API keys are saved exclusively in local Chrome profile storage (`chrome.storage.local`) and never synced to the cloud.
+
+Read the complete [Privacy Policy & Security Architecture](PRIVACY.md).
+
+---
+
+## 📄 License
+
+Wayfinder AI is free and open-source software licensed under the [MIT License](LICENSE).
 
 ---
 

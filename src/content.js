@@ -311,6 +311,13 @@
     const actionElements = [];
     document.querySelectorAll("button, a.btn, a.button, input[type='submit'], [role='button'], nav a").forEach((el, idx) => {
       if (idx < 15) {
+        // Security filter: strictly ignore sensitive inputs, passwords, and payment buttons
+        const type = (el.getAttribute("type") || "").toLowerCase();
+        const auto = (el.getAttribute("autocomplete") || "").toLowerCase();
+        const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+        if (type === "password" || type === "hidden") return;
+        if (/passw|credit|card|cvv|cvc|token|auth|secret|ssn/i.test(auto + " " + aria + " " + (el.className || ""))) return;
+
         const text = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim();
         if (text && text.length < 50 && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
           actionElements.push({
@@ -325,11 +332,24 @@
     const clone = document.body ? document.body.cloneNode(true) : null;
     let condensedText = "";
     if (clone) {
-      clone.querySelectorAll("script, style, noscript, svg, nav, footer, header, #wayfinder-hud-root, #wayfinder-selection-btn, #wayfinder-selection-popover, #wayfinder-chat-root, .wayfinder-dom-marker").forEach(node => node.remove());
-      condensedText = (clone.innerText || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 1500);
+      // Security filter: strip all scripts, forms, password fields, auth elements, and Wayfinder UI
+      clone.querySelectorAll(
+        "script, style, noscript, svg, nav, footer, header, input, textarea, select, " +
+        "[type='password'], [autocomplete*='password'], [autocomplete*='cc-'], [autocomplete*='card'], " +
+        "[data-sensitive], [data-private], .sensitive, .password, .credit-card, " +
+        "#wayfinder-hud-root, #wayfinder-selection-btn, #wayfinder-selection-popover, #wayfinder-chat-root, .wayfinder-dom-marker"
+      ).forEach(node => node.remove());
+
+      let rawText = (clone.innerText || "").replace(/\s+/g, " ").trim();
+
+      // PII Redaction: automatically sanitize emails, credit card numbers, SSNs, and API keys
+      rawText = rawText
+        .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[EMAIL_REDACTED]")
+        .replace(/\b(?:\d{4}[ -]?){3}\d{4}\b/g, "[CARD_REDACTED]")
+        .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[SSN_REDACTED]")
+        .replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|bearer\s+[a-zA-Z0-9._~+/-]+=*)/gi, "[KEY_REDACTED]");
+
+      condensedText = rawText.slice(0, 1500);
     }
 
     const relatedLinks = [];

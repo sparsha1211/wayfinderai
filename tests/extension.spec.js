@@ -475,4 +475,81 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await webPage.close();
   });
+
+  // Read local key securely without exposing it in git
+  let localConfig = {};
+  const localConfigPath = path.resolve(__dirname, 'test.config.local.json');
+  if (fs.existsSync(localConfigPath)) {
+    try { localConfig = JSON.parse(fs.readFileSync(localConfigPath, 'utf8')); } catch (e) {}
+  }
+
+  const liveOpenAIKey = process.env.OPENAI_API_KEY ||
+    localConfig?.apiKeys?.openai ||
+    (testConfig?.apiKeys?.openai && !testConfig.apiKeys.openai.includes('your-') ? testConfig.apiKeys.openai : null);
+
+  test('E2E-16: Live OpenAI cloud AI test connection & real-time navigation guidance with PII protection', async () => {
+    test.skip(!liveOpenAIKey, 'Requires OpenAI API Key in test.config.local.json or OPENAI_API_KEY env');
+
+    // 1. Configure OpenAI in popup
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    await popupPage.selectOption('#providerSelect', 'openai');
+    await popupPage.fill('#apiKeyInput', liveOpenAIKey);
+    await popupPage.fill('#modelSelect', 'gpt-4o-mini');
+
+    // Test connection
+    const testBtn = popupPage.locator('#testConnectionBtn');
+    await testBtn.click();
+    const statusLabel = popupPage.locator('#testConnectionStatus');
+    await expect(statusLabel).toHaveText(/Connected successfully!/, { timeout: 15000 });
+
+    // Save preferences
+    await popupPage.click('#saveSettingsBtn');
+    await popupPage.waitForTimeout(500);
+    await popupPage.close();
+
+    // 2. Open flight page and receive real live AI assistance
+    const webPage = await context.newPage();
+    await webPage.goto(flightPagePath);
+
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    // Open Beacon card
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    const overlayCard = webPage.locator('.wayfinder-overlay-card');
+    await expect(overlayCard).toBeVisible({ timeout: 5000 });
+
+    // Wait for real AI analysis to complete (loading spinner disappears and summary/intent appears)
+    const summaryBox = overlayCard.locator('.wayfinder-summary-box');
+    await expect(summaryBox).toBeVisible({ timeout: 20000 });
+
+    const summaryText = await summaryBox.innerText();
+    console.log(`[E2E-16] Live OpenAI Guidance Summary: ${summaryText}`);
+    expect(summaryText.length).toBeGreaterThan(15);
+
+    // Verify cognitive reasoning or proactive advice is rendered
+    const intentBox = overlayCard.locator('.wayfinder-intent-box, .wayfinder-intel-list');
+    await expect(intentBox.first()).toBeVisible({ timeout: 5000 });
+    const intelText = await intentBox.first().innerText();
+    console.log(`[E2E-16] Live Cognitive Intel: ${intelText.slice(0, 100)}...`);
+    expect(intelText.length).toBeGreaterThan(10);
+
+    // Verify DOM markers were attached to flight elements
+    const markers = webPage.locator('.wayfinder-dom-marker');
+    expect(await markers.count()).toBeGreaterThan(0);
+
+    // 3. Reset popup back to default for clean state
+    const resetPopup = await context.newPage();
+    await resetPopup.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+    await resetPopup.selectOption('#providerSelect', 'ollama');
+    await resetPopup.click('#saveSettingsBtn');
+    await resetPopup.waitForTimeout(400);
+    await resetPopup.close();
+
+    await webPage.close();
+  });
 });
