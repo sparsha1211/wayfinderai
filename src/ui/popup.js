@@ -9,6 +9,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Core UI elements
   const masterToggle = document.getElementById("masterToggle");
   const providerSelect = document.getElementById("providerSelect");
+  const licenseGroup = document.getElementById("licenseGroup");
+  const licenseKeyInput = document.getElementById("licenseKeyInput");
+  const licenseTierBadge = document.getElementById("licenseTierBadge");
+  const getTrialBtn = document.getElementById("getTrialBtn");
   const apiKeyGroup = document.getElementById("apiKeyGroup");
   const apiKeyInput = document.getElementById("apiKeyInput");
   const apiKeyHint = document.getElementById("apiKeyHint");
@@ -143,7 +147,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Test Connection Button Listener
   testConnectionBtn.addEventListener("click", async () => {
     const providerId = providerSelect.value;
-    const apiKey = apiKeyInput.value.trim();
+    const apiKey = providerId === "wayfinder_cloud" ? licenseKeyInput.value.trim() : apiKeyInput.value.trim();
     const model = modelSelect.value.trim();
     const endpoint = endpointInput.value.trim();
 
@@ -168,7 +172,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         newSettings.apiKeys = newSettings.apiKeys || {};
         newSettings.selectedModels = newSettings.selectedModels || {};
         newSettings.customEndpoints = newSettings.customEndpoints || {};
-        if (PROVIDERS[providerId]?.requiresKey && apiKey) {
+        if (providerId === "wayfinder_cloud") {
+          newSettings.licenseKey = apiKey;
+          newSettings.apiKeys.wayfinder_cloud = apiKey;
+        } else if (PROVIDERS[providerId]?.requiresKey && apiKey) {
           newSettings.apiKeys[providerId] = apiKey;
         }
         if (model) {
@@ -222,7 +229,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     newSettings.customEndpoints = newSettings.customEndpoints || {};
     newSettings.selectedModels = newSettings.selectedModels || {};
 
-    if (PROVIDERS[provider]?.requiresKey) {
+    if (provider === "wayfinder_cloud") {
+      newSettings.licenseKey = licenseKeyInput.value.trim();
+      newSettings.apiKeys.wayfinder_cloud = licenseKeyInput.value.trim();
+    } else if (PROVIDERS[provider]?.requiresKey) {
       newSettings.apiKeys[provider] = key;
     }
     if (model) {
@@ -313,13 +323,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   function updateProviderUI(providerKey, currentSettings) {
     const provider = PROVIDERS[providerKey] || PROVIDERS.openai;
 
-    if (provider.requiresKey) {
-      apiKeyGroup.style.display = "block";
-      apiKeyInput.value = currentSettings.apiKeys?.[providerKey] || "";
-      apiKeyHint.textContent = `Required for ${provider.name}. Stored locally.`;
+    if (providerKey === "wayfinder_cloud") {
+      if (licenseGroup) licenseGroup.style.display = "block";
+      if (apiKeyGroup) apiKeyGroup.style.display = "none";
+      if (licenseKeyInput) {
+        licenseKeyInput.value = currentSettings.licenseKey || currentSettings.apiKeys?.wayfinder_cloud || "";
+      }
+      endpointHint.textContent = "Wayfinder Cloud Server Gateway (Default: http://localhost:3000)";
     } else {
-      apiKeyGroup.style.display = "none";
-      apiKeyInput.value = "";
+      if (licenseGroup) licenseGroup.style.display = "none";
+      if (provider.requiresKey) {
+        if (apiKeyGroup) apiKeyGroup.style.display = "block";
+        if (apiKeyInput) apiKeyInput.value = currentSettings.apiKeys?.[providerKey] || "";
+        if (apiKeyHint) apiKeyHint.textContent = `Required for ${provider.name}. Stored locally.`;
+      } else {
+        if (apiKeyGroup) apiKeyGroup.style.display = "none";
+        if (apiKeyInput) apiKeyInput.value = "";
+      }
     }
 
     modelSelect.value = currentSettings.selectedModels?.[providerKey] || provider.defaultModel;
@@ -327,9 +347,38 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (providerKey === "ollama") {
       endpointHint.textContent = "Default: http://localhost:11434/api/chat. Set OLLAMA_ORIGINS='*' if blocked.";
-    } else {
+    } else if (providerKey !== "wayfinder_cloud") {
       endpointHint.textContent = `Default REST endpoint for ${provider.name}.`;
     }
+  }
+
+  // Free trial button listener
+  if (getTrialBtn) {
+    getTrialBtn.addEventListener("click", async () => {
+      const endpoint = endpointInput.value.trim() || "http://localhost:3000";
+      try {
+        const res = await fetch(`${endpoint.replace(/\/+$/, '')}/api/v1/auth/trial`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (data.success && data.licenseKey) {
+          licenseKeyInput.value = data.licenseKey;
+          if (licenseTierBadge) licenseTierBadge.textContent = "Trial Active";
+          const curr = await chrome.storage.local.get("wayfinder_settings");
+          const newSettings = curr.wayfinder_settings || {};
+          newSettings.licenseKey = data.licenseKey;
+          newSettings.activeProvider = "wayfinder_cloud";
+          await chrome.storage.local.set({ wayfinder_settings: newSettings });
+          showToast("🎉 7-day Free Trial activated! License key saved.");
+        } else {
+          showToast(`Error: ${data.error || "Could not activate trial"}`);
+        }
+      } catch (e) {
+        showToast("Gateway offline. Start server with: npm run server");
+      }
+    });
   }
 
   function updateStatusDisplay(enabled) {

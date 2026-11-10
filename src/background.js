@@ -10,16 +10,20 @@ import { WebResearcher } from "./services/webResearcher.js";
 const DEFAULT_SETTINGS = {
   enabled: true,
   activeProvider: "ollama",
+  licenseKey: "wf_live_test_pro_key_12345", // Wayfinder Cloud subscription license key
   apiKeys: {
     openai: "",
     claude: "",
     openrouter: "",
-    meta: ""
+    meta: "",
+    wayfinder_cloud: "wf_live_test_pro_key_12345"
   },
   customEndpoints: {
-    ollama: "http://localhost:11434/api/chat"
+    ollama: "http://localhost:11434/api/chat",
+    wayfinder_cloud: "http://localhost:3000"
   },
   selectedModels: {
+    wayfinder_cloud: "gpt-4o-mini",
     openai: "gpt-4o-mini",
     claude: "claude-3-5-haiku-20241022",
     openrouter: "meta-llama/llama-3.1-8b-instruct:free",
@@ -44,6 +48,7 @@ const DEFAULT_METRICS = {
 };
 
 const PROVIDER_RATES = {
+  wayfinder_cloud: { promptRate: 0, completionRate: 0 },                       // Subscription included
   openai: { promptRate: 0.15 / 1000000, completionRate: 0.60 / 1000000 },      // $0.15 / $0.60 per 1M (gpt-4o-mini)
   claude: { promptRate: 0.80 / 1000000, completionRate: 4.00 / 1000000 },      // $0.80 / $4.00 per 1M (Haiku 3.5)
   openrouter: { promptRate: 0.05 / 1000000, completionRate: 0.08 / 1000000 },  // ~$0.05 / $0.08 per 1M
@@ -202,6 +207,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  if (message.type === "VERIFY_SUBSCRIPTION_LICENSE") {
+    const { licenseKey, endpoint = "http://localhost:3000" } = message.payload || {};
+    fetch(`${endpoint.replace(/\/+$/, "")}/api/v1/auth/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ licenseKey })
+    })
+      .then(r => r.json())
+      .then(sendResponse)
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 /**
@@ -251,7 +269,9 @@ async function handlePageAssistance(pageContext) {
   }
 
   const providerId = wayfinder_settings.activeProvider || "ollama";
-  const apiKey = wayfinder_settings.apiKeys?.[providerId] || "";
+  const apiKey = providerId === "wayfinder_cloud"
+    ? (wayfinder_settings.licenseKey || wayfinder_settings.apiKeys?.wayfinder_cloud || "")
+    : (wayfinder_settings.apiKeys?.[providerId] || "");
   const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
   const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
 
@@ -435,7 +455,9 @@ async function handleSelectedTextAnalysis({ selectedText, pageUrl, pageTitle }) 
   }
 
   const providerId = wayfinder_settings.activeProvider || "ollama";
-  const apiKey = wayfinder_settings.apiKeys?.[providerId] || "";
+  const apiKey = providerId === "wayfinder_cloud"
+    ? (wayfinder_settings.licenseKey || wayfinder_settings.apiKeys?.wayfinder_cloud || "")
+    : (wayfinder_settings.apiKeys?.[providerId] || "");
   const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
   const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
 
@@ -514,7 +536,9 @@ async function handleChatWithPageContext({ query, pageContext = {}, selectedText
   }
 
   const providerId = wayfinder_settings.activeProvider || "ollama";
-  const apiKey = wayfinder_settings.apiKeys?.[providerId] || "";
+  const apiKey = providerId === "wayfinder_cloud"
+    ? (wayfinder_settings.licenseKey || wayfinder_settings.apiKeys?.wayfinder_cloud || "")
+    : (wayfinder_settings.apiKeys?.[providerId] || "");
   const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
   const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
 

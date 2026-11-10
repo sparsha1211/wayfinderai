@@ -19,6 +19,8 @@ dist/
 # Environment & credentials
 .env
 .env.local
+server/.env
+server/data/licenses.json
 *.pem
 *.local.json
 tests/test.config.local.json

@@ -44,13 +44,29 @@
       <div class="form-group">
         <label for="providerSelect">Active Provider</label>
         <select id="providerSelect" class="form-select">
+          <option value="wayfinder_cloud">Wayfinder Cloud (Subscription Service)</option>
           <option value="ollama">Ollama (Mac Local AI - Llama 3.2)</option>
           <option value="chrome_builtin">Chrome Built-in AI (Gemini Nano on Mac)</option>
-          <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
-          <option value="claude">Anthropic Claude (Haiku / Sonnet)</option>
-          <option value="openrouter">OpenRouter (Aggregator)</option>
-          <option value="meta">Meta / Muse (Llama 3.1 & 3.3)</option>
+          <option value="openai">OpenAI (BYOK - GPT-4o / GPT-4o-mini)</option>
+          <option value="claude">Anthropic Claude (BYOK - Haiku / Sonnet)</option>
+          <option value="openrouter">OpenRouter (BYOK - Aggregator)</option>
+          <option value="meta">Meta / Muse (BYOK - Llama 3.1 & 3.3)</option>
         </select>
+      </div>
+
+      <!-- Wayfinder Cloud License & Subscription Group -->
+      <div class="form-group" id="licenseGroup" style="display:none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label for="licenseKeyInput" style="margin-bottom:0;">Subscription License Key</label>
+          <span id="licenseTierBadge" style="font-size: 10px; font-weight: 700; color: #4338ca; background: #e0e7ff; padding: 2px 7px; border-radius: 4px;">Free Trial</span>
+        </div>
+        <div class="input-password-wrapper">
+          <input type="text" id="licenseKeyInput" class="form-input" placeholder="wf_live_... or wf_trial_..." autocomplete="off">
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+          <span class="input-hint" id="licenseKeyHint">No OpenAI key needed! Handled via your subscription.</span>
+          <button type="button" id="getTrialBtn" style="background: none; border: none; color: #4f46e5; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0;">Get 7-Day Free Trial</button>
+        </div>
       </div>
 
       <!-- Dynamic API Key Group -->

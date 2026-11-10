@@ -5,6 +5,16 @@
  */
 
 export const PROVIDERS = {
+  wayfinder_cloud: {
+    id: "wayfinder_cloud",
+    name: "Wayfinder Cloud (Subscription)",
+    defaultEndpoint: "http://localhost:3000",
+    defaultModel: "gpt-4o-mini",
+    models: ["gpt-4o-mini", "claude-3-5-haiku", "gpt-4o"],
+    requiresKey: false,
+    requiresLicense: true,
+    isLocal: false
+  },
   openai: {
     id: "openai",
     name: "OpenAI",
@@ -75,6 +85,30 @@ export class AIService {
     const activeEndpoint = endpoint || config.defaultEndpoint;
     const activeModel = model || config.defaultModel;
 
+    if (providerId === "wayfinder_cloud") {
+      const verifyUrl = `${activeEndpoint.replace(/\/+$/, "")}/api/v1/auth/verify`;
+      try {
+        const res = await fetch(verifyUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ licenseKey: apiKey })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Failed to verify license with Wayfinder Cloud");
+        }
+        return {
+          success: true,
+          provider: "wayfinder_cloud",
+          model: activeModel,
+          reply: `✓ Subscription Active: ${data.tierName || data.tier} (Remaining: ${data.quota?.remaining ?? "N/A"}/${data.quota?.dailyLimit ?? "N/A"})`,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+        };
+      } catch (err) {
+        throw new Error(`Wayfinder Cloud Error: ${err.message}`);
+      }
+    }
+
     if (config.requiresKey && !apiKey) {
       throw new Error(`API key is required to test ${config.name}.`);
     }
@@ -107,6 +141,10 @@ export class AIService {
     const activeEndpoint = endpoint || config.defaultEndpoint;
     const activeModel = model || config.defaultModel;
 
+    if (providerId === "wayfinder_cloud") {
+      return this._callWayfinderCloud({ endpoint: activeEndpoint, licenseKey: apiKey, model: activeModel, systemPrompt, userPrompt, responseFormat });
+    }
+
     if (config.requiresKey && !apiKey) {
       throw new Error(`API Key is required for ${config.name}. Please enter your key in the extension popup.`);
     }
@@ -119,6 +157,50 @@ export class AIService {
       return this._callClaude({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, responseFormat });
     } else {
       return this._callOpenAICompatible({ endpoint: activeEndpoint, apiKey, model: activeModel, systemPrompt, userPrompt, providerId, responseFormat });
+    }
+  }
+
+  static async _callWayfinderCloud({ endpoint, licenseKey, model, systemPrompt, userPrompt, responseFormat }) {
+    const actionPath = responseFormat === "json" ? "guidance" : "chat";
+    const url = `${endpoint.replace(/\/+$/, "")}/api/v1/ai/${actionPath}`;
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${licenseKey || ""}`
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        systemPrompt,
+        userPrompt,
+        responseFormat,
+        model
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      if (res.status === 401) {
+        throw new Error("Invalid or expired Wayfinder Cloud license key. Please check your key in Settings.");
+      }
+      if (res.status === 429) {
+        throw new Error(data.error || "Daily AI quota reached. Upgrade to Pro at wayfinderai.com/upgrade");
+      }
+      throw new Error(data.error || `Wayfinder Cloud error (${res.status})`);
+    }
+
+    if (responseFormat === "json") {
+      return {
+        data: data.guidance,
+        usage: data.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+      };
+    } else {
+      return {
+        data: { text: data.answer || data.analysis || "" },
+        usage: data.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+      };
     }
   }
 

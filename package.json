@@ -4,6 +4,7 @@
   "description": "Playwright E2E tests for Wayfinder AI Chrome Extension",
   "type": "module",
   "scripts": {
+    "server": "node server/index.js",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:mock": "playwright test tests/extension.spec.js"

@@ -2,6 +2,7 @@ import { test, expect, chromium } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { startServer, stopServer } from '../server/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,8 +17,16 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
   let context;
   let extensionId;
   let testConfig;
+  let cloudServer;
 
   test.beforeAll(async () => {
+    // Start local Cloud Gateway Server for subscription tests
+    try {
+      cloudServer = await startServer(3000);
+    } catch (e) {
+      console.log('[E2E Setup] Cloud server already running on port 3000');
+    }
+
     // 1. Read configuration (user can configure API keys or provider in test.config.json)
     if (fs.existsSync(configPath)) {
       testConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -46,6 +55,9 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
   test.afterAll(async () => {
     if (context) {
       await context.close();
+    }
+    if (cloudServer) {
+      try { await stopServer(); } catch (e) {}
     }
   });
 
@@ -598,6 +610,55 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
     expect(costText.startsWith('$')).toBe(true);
 
     await popupPage.close();
+    await webPage.close();
+  });
+
+  test('E2E-18: Wayfinder Cloud subscription mode verifies license and proxies AI navigation guidance securely', async () => {
+    // 1. Configure Wayfinder Cloud with Pro License Key in Popup
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    await popupPage.selectOption('#providerSelect', 'wayfinder_cloud');
+    const licenseGroup = popupPage.locator('#licenseGroup');
+    await expect(licenseGroup).toBeVisible();
+
+    const licenseInput = popupPage.locator('#licenseKeyInput');
+    await licenseInput.fill('wf_live_test_pro_key_12345');
+
+    const testBtn = popupPage.locator('#testConnectionBtn');
+    await testBtn.click();
+
+    const statusLabel = popupPage.locator('#testConnectionStatus');
+    await expect(statusLabel).toHaveText(/Connected successfully/, { timeout: 8000 });
+
+    await popupPage.click('#saveSettingsBtn');
+    await popupPage.waitForTimeout(400);
+    await popupPage.close();
+
+    // 2. Open sample page and verify Beacon Guidance Card is populated via Wayfinder Cloud
+    const webPage = await context.newPage();
+    await webPage.goto(samplePagePath);
+
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+
+    const beaconIcon = webPage.locator('.wayfinder-signal-beacon');
+    await beaconIcon.click();
+
+    const overlayCard = webPage.locator('.wayfinder-overlay-card');
+    await expect(overlayCard).toBeVisible({ timeout: 5000 });
+
+    const footer = overlayCard.locator('.wayfinder-footer-provider');
+    await expect(footer).toContainText('wayfinder_cloud', { timeout: 5000 });
+
+    // 3. Reset provider back to ollama for cleanliness
+    const resetPopup = await context.newPage();
+    await resetPopup.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+    await resetPopup.selectOption('#providerSelect', 'ollama');
+    await resetPopup.click('#saveSettingsBtn');
+    await resetPopup.waitForTimeout(300);
+    await resetPopup.close();
+
     await webPage.close();
   });
 });
