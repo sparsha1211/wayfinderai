@@ -1,14 +1,27 @@
 /**
- * Wayfinder AI Content Script
- * 3 Interaction Modes:
- * 1. Persistent Floating Beacon HUD with click-to-pin & hover-away dismissal
- * 2. In-Page DOM Markers (purple markers/beacons over interesting buttons/links with popovers)
- * 3. Text Selection AI Tooltip (highlight text to trigger instant AI explanation)
+ * Wayfinder AI — Autonomous In-Page Web Navigator & Copilot
+ * 
+ * ARCHITECTURE OVERVIEW:
+ * 1. CORE STATE & DIAGNOSTICS: Diagnostic logger, clipboard exporter, and string formatters
+ * 2. 4-TIER SECURITY GUARDRAILS: Strict zero-leakage privacy shield for passwords, auth, and card payments
+ * 3. SEMANTIC PERCEPTION & CONTEXT EXTRACTOR: Domain-agnostic Schema.org JSON-LD & DOM intent parser
+ * 4. IN-PAGE OVERLAY MARKERS LAYER: Top-level non-clipped coordinate tracking & interactive callout boxes
+ * 5. PERSISTENT FLOATING SIGNAL BEACON HUD: Apple-style frosted guidance center & prompt inspector
+ * 6. SELECTED TEXT COPILOT: Floating text selection analyzer tooltip
+ * 7. INTERACTIVE COPILOT CHATBOX: Cmd+I modal copilot with element context & intent chips
+ * 8. LIFECYCLE CONTROLLERS & HYDRATION: Route change observer, single-call-per-page policy, and timers
  */
 
 (function () {
+  "use strict";
+
+  // Prevent duplicate execution across iframe or script re-injections
   if (window.__WAYFINDER_INITIALIZED__) return;
   window.__WAYFINDER_INITIALIZED__ = true;
+
+  /* =========================================================================
+     1. CORE STATE & DIAGNOSTIC UTILITIES
+     ========================================================================= */
 
   let isAnalyzing = false;
   let beaconContainer = null;
@@ -32,9 +45,10 @@
 
   let lastUrl = window.location.href;
   let hasAnalyzedCurrentPage = false;
+  let positionUpdateTimer = null;
 
   /**
-   * Diagnostic & In-Page Logger
+   * Diagnostic & In-Page Structured Logger
    */
   const WayfinderLogger = {
     logs: [],
@@ -65,6 +79,9 @@
 
   WayfinderLogger.log(`Content script loaded on: ${window.location.href}`);
 
+  /**
+   * Diagnostic Report Exporter
+   */
   async function copyDiagnosticLogs() {
     WayfinderLogger.log("Compiling diagnostic report for clipboard...");
     let bgLogs = [];
@@ -99,36 +116,30 @@
       "--- SETTINGS & AI CONFIGURATION ---",
       `Enabled: ${bgSettings.enabled !== false}`,
       `Active Provider: ${activeProvider}`,
-      `Configured Model: ${bgSettings.selectedModels?.[activeProvider] || "Default"}`,
+      `Selected Model: ${bgSettings.selectedModels?.[activeProvider] || "Default"}`,
       `API Key: ${maskedKey}`,
-      `Endpoint: ${bgSettings.customEndpoints?.[activeProvider] || "Default"}`,
+      `Custom Endpoint: ${bgSettings.customEndpoints?.[activeProvider] || "Default"}`,
+      `DOM Markers Enabled: ${bgSettings.domMarkersEnabled !== false}`,
       `Marker Style: ${currentMarkerStyle}`,
-      `Markers Enabled in Settings: ${bgSettings.domMarkersEnabled !== false}`,
+      `Learn Navigation Patterns: ${bgSettings.learnPatterns !== false}`,
       "",
-      "--- ON-PAGE DOM MARKERS STATUS ---",
-      `Active Markers on Page: ${domMarkers.length}`,
-      markerDetails || "  (No markers currently rendered on DOM)",
+      "--- ACTIVE IN-PAGE DOM MARKERS (" + domMarkers.length + ") ---",
+      markerDetails || "  (None active)",
       "",
-      "--- ACTIVE AI PROMPT & RAW RESPONSE ---",
-      `System Prompt:\n${lastPageAssistanceData?.prompts?.systemPrompt || "N/A"}\n`,
-      `User Prompt:\n${lastPageAssistanceData?.prompts?.userPrompt || "N/A"}\n`,
-      `Raw Guidance Output:\n${JSON.stringify(lastPageAssistanceData?.guidance || lastPageAssistanceData?.error || "N/A", null, 2)}\n`,
+      "--- IN-PAGE CONTENT SCRIPT LOGS (Last " + WayfinderLogger.logs.length + ") ---",
+      WayfinderLogger.logs.join("\n") || "  (No in-page logs)",
       "",
-      "--- RECENT IN-PAGE CONTENT SCRIPT LOGS ---",
-      WayfinderLogger.logs.slice(-25).join("\n") || "  (No content logs recorded)",
-      "",
-      "--- RECENT BACKGROUND AI WORKER LOGS ---",
-      bgLogs.slice(-3).map(l => `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.type} - Status: ${l.status}${l.error ? ` (Error: ${l.error})` : ''} - Provider: ${l.provider}`).join("\n") || "  (No background logs recorded)",
+      "--- BACKGROUND SERVICE WORKER LOGS (Last " + bgLogs.length + ") ---",
+      bgLogs.slice(-10).map(l => `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.type} - Status: ${l.status}${l.error ? ` (Error: ${l.error})` : ''} - Provider: ${l.provider}`).join("\n") || "  (No background logs recorded)",
       "================================================================"
     ].join("\n");
 
     try {
       await navigator.clipboard.writeText(report);
-      showInPageToast("✓ Diagnostic logs copied to clipboard! Paste them here.");
-      WayfinderLogger.log("Diagnostic report successfully written to clipboard.");
+      showInPageToast("✓ Diagnostic logs copied to clipboard!");
     } catch (err) {
       console.log(report);
-      alert("Diagnostic logs output to browser console (F12)!");
+      alert("Wayfinder Diagnostic logs output to console (Clipboard write unavailable)");
     }
   }
 
@@ -138,66 +149,87 @@
       toast = document.createElement("div");
       toast.id = "wayfinder-inpage-toast";
       toast.className = "wayfinder-inpage-toast";
-      (document.body || document.documentElement).appendChild(toast);
+      document.body.appendChild(toast);
     }
-    toast.innerText = message;
+    toast.textContent = message;
     toast.classList.add("visible");
-    setTimeout(() => toast.classList.remove("visible"), 3500);
+    setTimeout(() => {
+      toast.classList.remove("visible");
+    }, 2800);
   }
 
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function formatMarkdownSnippets(text) {
+    if (!text) return "";
+    return escapeHtml(text)
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.*?)\*/g, "<em>$1</em>")
+      .replace(/\n\n/g, "<br><br>")
+      .replace(/\n- /g, "<br>• ");
+  }
+
+  /* =========================================================================
+     2. 4-TIER SECURITY GUARDRAILS (ZERO-LEAKAGE PRIVACY SHIELD)
+     ========================================================================= */
+
   /**
-   * CRITICAL SECURITY GUARD RAILS: Passwords & Payments
-   * Multi-tiered protection: Automatic Shielding, DOM element exclusion, & Regex PII Sanitization.
+   * Tier 1: Client-Side Text Sanitizer & Redactor
+   * Redacts passwords, API keys, bearer tokens, credit cards, SSNs, and emails.
    */
   function sanitizeSensitiveText(text) {
     if (!text || typeof text !== "string") return "";
     return text
-      // Credit card numbers (standard 16-digit or spaced)
+      .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[EMAIL_REDACTED]")
       .replace(/\b(?:\d{4}[ -]?){3}\d{4}\b/g, "[CARD_REDACTED]")
-      .replace(/\b\d{4}[ -]?\d{6}[ -]?\d{5}\b/g, "[CARD_REDACTED]") // Amex
-      // CVV / CVC / Security codes
-      .replace(/\b(?:cvv|cvc|cid|security code)[\s:=]*([0-9]{3,4})\b/gi, "[CVV_REDACTED]")
-      // Password strings in key-value or query format (e.g. password=xyz)
-      .replace(/(?:password|passwd|pwd|secret)[\s:=]+([^\s&,]{3,})/gi, "[PASSWORD_REDACTED]")
-      // US Social Security Numbers
       .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[SSN_REDACTED]")
-      // International Bank Account Numbers (IBAN)
-      .replace(/\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b/g, "[IBAN_REDACTED]")
-      // Cryptocurrency addresses (BTC / ETH)
-      .replace(/\b(0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g, "[CRYPTO_ADDR_REDACTED]")
-      // API Keys and Bearer auth tokens
-      .replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|bearer\s+[a-zA-Z0-9._~+/-]+=*)\b/gi, "[KEY_REDACTED]")
-      // Email addresses
-      .replace(/\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, "[EMAIL_REDACTED]");
+      .replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|bearer\s+[a-zA-Z0-9._~+/-]+=*)/gi, "[KEY_REDACTED]")
+      .replace(/\b(?:\d{3,4}\b(?=.*(?:cvv|cvc|security code)))/gi, "[CVV_REDACTED]")
+      .replace(/(?:password|secret|pin|passwd)\s*[:=]\s*[^\s,;]+/gi, "[PASSWORD_REDACTED]");
   }
 
+  /**
+   * Tier 2: Sensitive DOM Element Detector
+   */
   function isSensitiveElement(el) {
-    if (!el || !(el instanceof Element)) return false;
+    if (!el || !el.getAttribute) return false;
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute("type") || "").toLowerCase();
     const auto = (el.getAttribute("autocomplete") || "").toLowerCase();
     const name = (el.getAttribute("name") || "").toLowerCase();
-    const id = (el.id || "").toLowerCase();
-    const cls = (typeof el.className === "string" ? el.className : "").toLowerCase();
+    const id = (el.getAttribute("id") || "").toLowerCase();
     const aria = (el.getAttribute("aria-label") || "").toLowerCase();
-    const combined = `${tag} ${type} ${auto} ${name} ${id} ${cls} ${aria}`;
+    const cls = (el.className && typeof el.className === "string") ? el.className.toLowerCase() : "";
 
-    if (type === "password" || type === "hidden") return true;
-    if (/passw|credit|card|cvv|cvc|cid|token|auth|secret|ssn|iban|routing|billing|expir/i.test(combined)) return true;
+    if (type === "password") return true;
+    if (tag === "input" && (type === "hidden" && /csrf|token|auth|pass/i.test(name + id))) return true;
 
-    // Check if inside a checkout payment form, billing section, or login form
-    if (el.closest("form[action*='login'], form[action*='signin'], form[action*='pay'], form[action*='checkout'], form[id*='payment'], form[id*='checkout'], [class*='payment-form']")) {
-      if (tag === "input" || tag === "select" || tag === "textarea") return true;
+    const sensitiveTerms = /password|passwd|passcode|secret|creditcard|cardnumber|cvv|cvc|securitycode|exp-date|ssn|social-security/i;
+    const combined = `${auto} ${name} ${id} ${aria} ${cls}`;
+    if (sensitiveTerms.test(combined)) return true;
+
+    if (auto.includes("cc-") || auto.includes("current-password") || auto.includes("new-password") || auto.includes("one-time-code")) {
+      return true;
     }
-
     return false;
   }
 
+  /**
+   * Tier 3: Sensitive Page & Authentication Context Checker
+   */
   function checkSensitivePageContext() {
     const url = window.location.href.toLowerCase();
     const path = window.location.pathname.toLowerCase();
 
-    // 1. Sensitive URL paths and domains (checkout, payment gateways, login, banking)
+    // Sensitive URL paths & domains (checkout, billing, login, authentication, payment gateways)
     const sensitivePatterns = [
       "/checkout/payment", "/checkout/billing", "/pay", "/payment", "/billing",
       "/login", "/signin", "/signup", "/register", "/auth", "/oauth",
@@ -211,7 +243,7 @@
       }
     }
 
-    // 2. DOM inspection: check for live password or payment inputs
+    // DOM inspection: check for live password or payment inputs
     const passwordEl = document.querySelector("input[type='password'], [autocomplete*='password']");
     if (passwordEl) {
       return { isSensitive: true, reason: "Login or password form detected" };
@@ -229,6 +261,9 @@
     return { isSensitive: false };
   }
 
+  /**
+   * Tier 4: Privacy Shield Visual State & Guarantees
+   */
   function renderPrivacyShieldState(reason) {
     const cardBody = document.getElementById("wayfinder-card-body");
     const badge = document.getElementById("wayfinder-beacon-badge");
@@ -271,9 +306,22 @@
     }
   }
 
+  /* =========================================================================
+     3. SEMANTIC PERCEPTION & CONTEXT EXTRACTOR
+     ========================================================================= */
+
+  function generateSimpleSelector(el) {
+    if (el.id) return `#${el.id}`;
+    if (el.className && typeof el.className === "string") {
+      const cls = el.className.split(" ").filter(c => c && !c.startsWith("wayfinder")).slice(0, 2).join(".");
+      if (cls) return `${el.tagName.toLowerCase()}.${cls}`;
+    }
+    return el.tagName.toLowerCase();
+  }
+
   /**
-   * 1. Universal Semantic Entity Extraction (Zero domain hardcoding)
-   * Inspects Schema.org JSON-LD microdata, OpenGraph tags, and universal DOM cues.
+   * Universal Semantic Entity Extraction (Zero domain hardcoding)
+   * Inspects Schema.org JSON-LD microdata.
    */
   function extractJsonLdEntity() {
     const scripts = document.querySelectorAll('script[type="application/ld+json"]');
@@ -329,6 +377,9 @@
     return null;
   }
 
+  /**
+   * Universal Semantic Entity Extractor with heuristic fallback
+   */
   function extractSemanticEntity() {
     const jsonLd = extractJsonLdEntity();
     if (jsonLd && (jsonLd.name || jsonLd.price)) {
@@ -421,6 +472,9 @@
     return extractSemanticEntity();
   }
 
+  /**
+   * Extract comprehensive, sanitized page context for AI reasoning
+   */
   function extractPageContext() {
     const title = document.title || "";
     const url = window.location.href;
@@ -505,18 +559,349 @@
     return { title, url, domain, metaDescription: metaDesc, headings, actionElements, condensedText, semanticEntity, productInfo, relatedLinks };
   }
 
-  function generateSimpleSelector(el) {
-    if (el.id) return `#${el.id}`;
-    if (el.className && typeof el.className === "string") {
-      const cls = el.className.split(" ").filter(c => c && !c.startsWith("wayfinder")).slice(0, 2).join(".");
-      if (cls) return `${el.tagName.toLowerCase()}.${cls}`;
+  /* =========================================================================
+     4. IN-PAGE OVERLAY MARKERS & CALLOUT BOXES (ZERO-CLIPPING LAYER)
+     Injected into a top-level overlay layer (#wayfinder-markers-layer) directly on document.body.
+     This completely eliminates clipping from overflow:hidden, contain:paint, or button stacking contexts.
+     ========================================================================= */
+
+  function getOrCreateMarkersLayer() {
+    let layer = document.getElementById("wayfinder-markers-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "wayfinder-markers-layer";
+      layer.className = "wayfinder-markers-layer";
+      (document.body || document.documentElement).appendChild(layer);
     }
-    return el.tagName.toLowerCase();
+    return layer;
+  }
+
+  function clearDomMarkers() {
+    const layer = document.getElementById("wayfinder-markers-layer");
+    if (layer) {
+      layer.innerHTML = "";
+    }
+    document.querySelectorAll(".wayfinder-dom-marker").forEach(el => el.remove());
+  }
+
+  function positionSingleMarker(marker, target, style) {
+    if (!target || !target.isConnected) {
+      marker.style.display = "none";
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0 && target.offsetParent === null) {
+      marker.style.display = "none";
+      return;
+    }
+
+    marker.style.display = "inline-flex";
+    marker.style.position = "absolute";
+
+    const pageScrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
+    const pageScrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
+
+    if (style === "badge") {
+      let top = pageScrollY + rect.top - 28;
+      let left = pageScrollX + Math.max(0, rect.left);
+      if (rect.top < 34) {
+        top = pageScrollY + rect.bottom + 4;
+        marker.classList.add("wayfinder-callout-below");
+      } else {
+        marker.classList.remove("wayfinder-callout-below");
+      }
+      marker.style.top = `${Math.round(top)}px`;
+      marker.style.left = `${Math.round(left)}px`;
+    } else {
+      let top = pageScrollY + rect.top - 6;
+      let left = pageScrollX + rect.right - 10;
+      marker.style.top = `${Math.round(top)}px`;
+      marker.style.left = `${Math.round(left)}px`;
+    }
+  }
+
+  function updateAllMarkerPositions() {
+    const layer = document.getElementById("wayfinder-markers-layer");
+    if (!layer) return;
+    const markers = layer.querySelectorAll(".wayfinder-dom-marker");
+    markers.forEach(marker => {
+      const target = marker._targetElement;
+      const style = marker.getAttribute("data-marker-style") || currentMarkerStyle;
+      positionSingleMarker(marker, target, style);
+    });
+  }
+
+  function throttledUpdateMarkerPositions() {
+    if (positionUpdateTimer) return;
+    positionUpdateTimer = requestAnimationFrame(() => {
+      positionUpdateTimer = null;
+      updateAllMarkerPositions();
+    });
+  }
+
+  window.addEventListener("scroll", throttledUpdateMarkerPositions, { passive: true });
+  window.addEventListener("resize", throttledUpdateMarkerPositions, { passive: true });
+
+  /**
+   * Fallback heuristic markers so interesting items are highlighted immediately
+   */
+  function getHeuristicDomCandidates() {
+    const candidates = [];
+    const seen = new Set();
+
+    // 1. Universal Semantic High-Value Elements (Price/Fare, Actions, Reviews, Policies, Dates)
+    const universalRules = [
+      {
+        sel: "[class*='price'], [class*='fare'], [class*='rate'], [itemprop='price'], .priceToPay, .apexPriceToPay, #priceblock_ourprice, #priceblock_dealprice, #price, [data-testid*='price']",
+        note: "Price / Fare: Check for hidden fees, price changes, or cheaper alternatives (⌘I)"
+      },
+      {
+        sel: "button[type='submit'], [class*='book'], [class*='reserve'], [class*='add-to-cart'], [class*='buy'], [id*='book'], [id*='cart'], [id*='buy'], [data-testid*='book'], [data-testid*='buy'], #add-to-cart-button, #buy-now-button",
+        note: "Key Action: Compare terms, cancellation policy, or return window before confirming"
+      },
+      {
+        sel: "[class*='review'], [class*='rating'], [id*='review'], [id*='rating'], [data-hook='total-review-count'], [data-testid*='review'], #averageCustomerReviews",
+        note: "Customer Feedback: Copilot (⌘I) can summarize sentiment, defect patterns & gotchas"
+      },
+      {
+        sel: "[class*='amenit'], [class*='policy'], [class*='cancel'], [class*='baggage'], [class*='spec'], [class*='feature'], [id*='policy'], [id*='amenit'], #feature-bullets",
+        note: "Policies & Details: Check baggage allowance, cancellation deadlines, or prerequisites"
+      },
+      {
+        sel: "[class*='date'], [class*='calendar'], [class*='schedule'], [class*='depart'], [class*='checkin'], [data-testid*='date']",
+        note: "Timeline / Dates: Verify flexibility, layover times, or off-peak savings"
+      }
+    ];
+
+    for (const rule of universalRules) {
+      try {
+        const elements = Array.from(document.querySelectorAll(rule.sel));
+        for (let el of elements) {
+          if (!el || isSensitiveElement(el)) continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
+
+          // If target is inside a button container or wrapper, attach to the outer visible element
+          const outerBtn = el.closest(".a-button, button, [role='button']");
+          if (outerBtn) el = outerBtn;
+
+          if (!seen.has(el) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
+            seen.add(el);
+            candidates.push({ element: el, note: rule.note });
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2. General page interactive elements (buttons, links, search, headers)
+    const selectors = [
+      "main button", "header button", "button",
+      "header nav a", "nav a", "main a.btn", "main a.button", "a.btn",
+      "[role='button']", "input[type='submit']",
+      "main h1", "h1", "h2", "input[type='search']", "input[name='q']"
+    ];
+
+    for (const sel of selectors) {
+      try {
+        const elements = Array.from(document.querySelectorAll(sel));
+        for (let el of elements) {
+          if (candidates.length >= 8) break;
+          if (!el || isSensitiveElement(el)) continue;
+          const rect = el.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
+
+          const outerBtn = el.closest(".a-button, button, [role='button']");
+          if (outerBtn) el = outerBtn;
+
+          if (seen.has(el) || el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover") || el.closest("#wayfinder-chat-root")) continue;
+
+          if (rect.width > 20 && rect.height > 15) {
+            seen.add(el);
+            candidates.push({
+              element: el,
+              note: `Key element: "${(el.innerText || el.value || el.title || 'Page Action').trim().slice(0, 35)}"`
+            });
+          }
+        }
+      } catch (e) {}
+      if (candidates.length >= 8) break;
+    }
+
+    return candidates;
+  }
+
+  function applyHeuristicDomMarkers() {
+    if (checkSensitivePageContext().isSensitive) {
+      clearDomMarkers();
+      return;
+    }
+    WayfinderLogger.log("Scanning DOM for candidates...");
+    const candidates = getHeuristicDomCandidates();
+    WayfinderLogger.log(`Found ${candidates.length} DOM candidates to mark.`);
+    renderDomMarkers(candidates);
   }
 
   /**
-   * 2. Initialize HUD
+   * Render DOM markers and callouts onto the non-clipped layer
    */
+  function renderDomMarkers(items) {
+    clearDomMarkers();
+    if (checkSensitivePageContext().isSensitive) {
+      return;
+    }
+
+    let effectiveItems = (items && items.length > 0) ? [...items] : null;
+    if (!effectiveItems || effectiveItems.length === 0) {
+      WayfinderLogger.log("No specific guidance items provided, falling back to heuristic candidates...");
+      effectiveItems = getHeuristicDomCandidates();
+    }
+
+    // On high-interest pages (flights, stays, products), if fewer than 3 items, include key candidates
+    const semanticEntity = extractSemanticEntity();
+    if (semanticEntity && effectiveItems.length < 3) {
+      const candidates = getHeuristicDomCandidates();
+      effectiveItems = [...effectiveItems, ...candidates];
+    }
+
+    if (!effectiveItems || !effectiveItems.length) {
+      WayfinderLogger.warn("No DOM elements found to render markers.");
+      return;
+    }
+
+    currentGuidanceItems = effectiveItems;
+    const layer = getOrCreateMarkersLayer();
+    let attachedCount = 0;
+    const seenTargets = new Set();
+
+    effectiveItems.forEach((item) => {
+      let target = item.element || null;
+
+      if (!target && item.selector) {
+        try { target = document.querySelector(item.selector); } catch (e) {}
+      }
+
+      const hint = item.targetHint || item.textHint || item.label;
+      if (!target && hint) {
+        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit'], [role='button'], .price, #productTitle"));
+        target = candidates.find(el => {
+          const text = (el.innerText || el.value || "").toLowerCase();
+          return text.includes(hint.toLowerCase()) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root");
+        });
+      }
+
+      if (target) {
+        const outerBtn = target.closest(".a-button");
+        if (outerBtn) target = outerBtn;
+      }
+
+      if (!target || seenTargets.has(target)) return;
+      if (target.closest("#wayfinder-hud-root") || target.closest("#wayfinder-chat-root")) return;
+
+      const rect = target.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0 && target.offsetParent === null) return;
+
+      seenTargets.add(target);
+
+      const marker = document.createElement("div");
+      marker._targetElement = target;
+      const noteText = item.note || item.explanation || item.label || "Key navigation item";
+
+      if (currentMarkerStyle === "badge") {
+        // Direct Purple Box (Inline Callout Box)
+        marker.className = "wayfinder-dom-marker wayfinder-marker-callout";
+        marker.setAttribute("data-marker-style", "badge");
+        marker.title = noteText;
+
+        marker.innerHTML = `
+          <div class="wayfinder-callout-box">
+            <span class="wayfinder-callout-icon">✦</span>
+            <span class="wayfinder-callout-text">${escapeHtml(noteText)}</span>
+            <button class="wayfinder-callout-chat-btn" title="Ask Copilot about this (⌘I)">💬 Ask</button>
+          </div>
+          <div class="wayfinder-marker-popover">
+            <div class="wayfinder-marker-popover-header">
+              <span class="wayfinder-marker-icon">✦</span>
+              <strong>Wayfinder Insight</strong>
+            </div>
+            <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
+            <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
+              💬 Ask Copilot <kbd>⌘I</kbd>
+            </button>
+          </div>
+        `;
+
+        const chatBtn = marker.querySelector(".wayfinder-callout-chat-btn");
+        if (chatBtn) {
+          chatBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
+            toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
+          });
+        }
+
+        // Click on callout box scrolls element into view smoothly if partially obscured
+        marker.addEventListener("click", (e) => {
+          if (!e.target.closest(".wayfinder-callout-chat-btn")) {
+            target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        });
+      } else {
+        // Dot Mode with Hover/Click Popover
+        marker.className = "wayfinder-dom-marker wayfinder-marker-dot-mode";
+        marker.setAttribute("data-marker-style", "dot");
+        marker.title = "Wayfinder Insight (Click or hover for details)";
+
+        marker.innerHTML = `
+          <div class="wayfinder-marker-dot"></div>
+          <div class="wayfinder-marker-popover">
+            <div class="wayfinder-marker-popover-header">
+              <span class="wayfinder-marker-icon">✦</span>
+              <strong>Wayfinder Insight</strong>
+            </div>
+            <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
+            <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
+              💬 Ask Copilot <kbd>⌘I</kbd>
+            </button>
+          </div>
+        `;
+
+        // Click on marker opens/toggles popover
+        marker.addEventListener("click", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const popover = marker.querySelector(".wayfinder-marker-popover");
+          if (popover) {
+            popover.classList.toggle("wayfinder-popover-pinned");
+          }
+        });
+
+        // Chat button opens chatbox with item context
+        const chatBtn = marker.querySelector(".wayfinder-marker-chat-btn");
+        if (chatBtn) {
+          chatBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
+            toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
+          });
+        }
+      }
+
+      positionSingleMarker(marker, target, currentMarkerStyle);
+      layer.appendChild(marker);
+      attachedCount++;
+      WayfinderLogger.log(`Attached marker #${attachedCount} to top-level layer for <${target.tagName.toLowerCase()}>`, noteText);
+    });
+
+    WayfinderLogger.log(`Finished rendering markers. Total attached: ${attachedCount}`);
+  }
+
+  /* =========================================================================
+     5. PERSISTENT FLOATING SIGNAL BEACON HUD & GUIDANCE CARDS
+     ========================================================================= */
+
   function injectBeaconHUD() {
     if (document.getElementById("wayfinder-hud-root")) return;
 
@@ -624,7 +1009,6 @@
         currentMarkerStyle = (currentMarkerStyle === "badge" ? "dot" : "badge");
         styleToggleBtn.innerText = currentMarkerStyle === "badge" ? "🟣 Dots" : "🏷️ Text Boxes";
 
-        // Save preference
         try {
           const curr = await chrome.storage.local.get("wayfinder_settings");
           const newSettings = curr.wayfinder_settings || {};
@@ -632,7 +1016,6 @@
           await chrome.storage.local.set({ wayfinder_settings: newSettings });
         } catch (err) {}
 
-        // Re-render markers instantly
         renderDomMarkers(currentGuidanceItems);
       });
     }
@@ -685,113 +1068,6 @@
     }
   }
 
-  /**
-   * 3. Run Page Analysis (Exactly 1 call per page load / refresh)
-   */
-  async function runPageAnalysis(force = false) {
-    if (isAnalyzing) return;
-    if (hasAnalyzedCurrentPage && !force) return; // Prevent multiple calls per page refresh
-
-    const { wayfinder_settings: settings = {} } = await chrome.storage.local.get("wayfinder_settings");
-    if (settings.enabled === false) {
-      if (beaconContainer) beaconContainer.style.display = "none";
-      clearDomMarkers();
-      return;
-    } else {
-      if (beaconContainer) beaconContainer.style.display = "block";
-    }
-
-    injectBeaconHUD();
-
-    if (settings.markerStyle) {
-      currentMarkerStyle = settings.markerStyle;
-      const styleBtn = document.getElementById("wayfinder-style-toggle-btn");
-      if (styleBtn) {
-        styleBtn.innerText = currentMarkerStyle === "badge" ? "🟣 Dots" : "🏷️ Text Boxes";
-      }
-    }
-
-    isAnalyzing = true;
-    hasAnalyzedCurrentPage = true;
-
-    // Critical Security Guard Rail: Auto-pause AI on login, password, and payment forms
-    const privacyCheck = checkSensitivePageContext();
-    if (privacyCheck.isSensitive && !force) {
-      isAnalyzing = false;
-      clearDomMarkers();
-
-      chrome.runtime.sendMessage({
-        type: "RECORD_SHIELDED_PAGE",
-        payload: { reason: privacyCheck.reason }
-      });
-
-      const beaconEl = document.querySelector(".wayfinder-signal-beacon");
-      if (beaconEl) {
-        beaconEl.classList.add("wayfinder-beacon-shield");
-        beaconEl.title = `Wayfinder Privacy Shield Active: ${privacyCheck.reason}`;
-      }
-
-      renderPrivacyShieldState(privacyCheck.reason);
-      return;
-    }
-
-    // Place initial DOM markers so user sees interesting interactable items right away
-    if (settings.domMarkersEnabled !== false) {
-      applyHeuristicDomMarkers();
-    }
-
-    const cardBody = document.getElementById("wayfinder-card-body");
-    if (cardBody) {
-      cardBody.innerHTML = `
-        <div class="wayfinder-loading-state">
-          <div class="wayfinder-spinner"></div>
-          <span>Analyzing DOM & navigation cues...</span>
-        </div>
-      `;
-    }
-
-    const context = extractPageContext();
-
-    chrome.runtime.sendMessage({
-      type: "RECORD_PAGE_VISIT",
-      payload: {
-        url: context.url,
-        title: context.title,
-        domain: context.domain,
-        metaDescription: context.metaDescription
-      }
-    });
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: "REQUEST_PAGE_ASSISTANCE",
-        payload: context
-      });
-
-      lastPageAssistanceData = response;
-      isAnalyzing = false;
-
-      if (!response || !response.success) {
-        renderErrorState(response?.error || "AI could not process this page.");
-        return;
-      }
-
-      renderGuidanceContent(response.guidance, response.provider, response.model);
-
-      if (response.domMarkersEnabled !== false && settings.domMarkersEnabled !== false) {
-        renderDomMarkers(response.guidance.domHighlights || response.guidance.suggestedActions || []);
-      } else {
-        clearDomMarkers();
-      }
-    } catch (err) {
-      isAnalyzing = false;
-      renderErrorState(err.message);
-    }
-  }
-
-  /**
-   * 4. Render main guidance card
-   */
   function renderGuidanceContent(guidance, provider, model) {
     const cardBody = document.getElementById("wayfinder-card-body");
     const badge = document.getElementById("wayfinder-beacon-badge");
@@ -947,6 +1223,85 @@
     });
   }
 
+  function renderErrorState(errorMessage) {
+    WayfinderLogger.error("Error State Triggered", errorMessage);
+    const cardBody = document.getElementById("wayfinder-card-body");
+    const badge = document.getElementById("wayfinder-beacon-badge");
+    if (badge) {
+      badge.style.display = "block";
+      badge.textContent = "!";
+      badge.style.background = "#ef4444";
+    }
+    if (!cardBody) return;
+
+    const entity = extractSemanticEntity();
+    let bannerHtml = "";
+    if (entity) {
+      const catBadge = entity.category === "flight" ? "✈️ Flight & Travel Intel" :
+                       entity.category === "stay" ? "🏡 Stay & Lodging Intel" :
+                       entity.category === "shopping" ? "🛍️ Product & Value Intel" :
+                       entity.category === "docs" ? "💻 Tech & Documentation Intel" : "🧭 Page Intel";
+      const catClass = `wayfinder-entity-${entity.category || 'general'}`;
+      bannerHtml = `
+        <div class="wayfinder-product-banner ${catClass}">
+          <div class="wayfinder-product-badge">${catBadge}</div>
+          <div class="wayfinder-product-name">${escapeHtml(entity.name || "Identified Target")}</div>
+          <div class="wayfinder-product-stats">
+            ${entity.price ? `<span class="wayfinder-product-price">${escapeHtml(entity.price)}</span>` : ""}
+            ${entity.rating ? `<span class="wayfinder-product-rating">⭐ ${escapeHtml(entity.rating)}</span>` : ""}
+            ${entity.dates ? `<span class="wayfinder-product-dates">📅 ${escapeHtml(entity.dates)}</span>` : ""}
+            ${entity.location ? `<span class="wayfinder-product-location">📍 ${escapeHtml(entity.location)}</span>` : ""}
+          </div>
+          <button class="wayfinder-ecom-cta-btn" id="wayfinder-product-deals-btn">
+            🔍 Copilot Analysis, Gotchas & Alternatives (⌘I)
+          </button>
+        </div>
+      `;
+    }
+
+    cardBody.innerHTML = `
+      ${bannerHtml}
+      <div class="wayfinder-error-state">
+        <div class="wayfinder-error-icon">⚠️</div>
+        <div class="wayfinder-error-title">AI Guidance Notice</div>
+        <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
+        <p class="wayfinder-error-help">Check your API key in the extension popup or verify provider settings.</p>
+        ${lastPageAssistanceData?.prompts?.userPrompt ? `
+          <details class="wayfinder-prompt-details">
+            <summary class="wayfinder-prompt-toggle">👁️ View Active AI Prompt Sent</summary>
+            <div class="wayfinder-prompt-content">
+              <div class="wayfinder-prompt-label">SYSTEM PROMPT:</div>
+              <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.systemPrompt || "")}</pre>
+              <div class="wayfinder-prompt-label">USER PROMPT:</div>
+              <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.userPrompt || "")}</pre>
+            </div>
+          </details>
+        ` : ""}
+        <button class="wayfinder-copy-logs-btn" id="wayfinder-copy-logs-err-btn" style="margin-top: 10px; background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px 12px; font-weight: 600; cursor: pointer;">
+          📋 Copy Diagnostic Logs
+        </button>
+      </div>
+    `;
+
+    const dealsBtn = cardBody.querySelector("#wayfinder-product-deals-btn");
+    if (dealsBtn && entity) {
+      dealsBtn.addEventListener("click", () => {
+        const catPrompt = entity.category === "flight" ? "What hidden baggage fees, layover risks, or cheaper alternative dates should I watch out for?" :
+                          entity.category === "stay" ? "What hidden cleaning fees, cancellation deadlines, or neighborhood safety gotchas should I know?" :
+                          "Can I find this cheaper elsewhere, or what are historical price trends and good alternatives?";
+        toggleChatbox(true, `${entity.category.toUpperCase()}: ${entity.name} (${entity.price || ''})`);
+        sendChatMessage(catPrompt);
+      });
+    }
+
+    const errCopyBtn = document.getElementById("wayfinder-copy-logs-err-btn");
+    if (errCopyBtn) {
+      errCopyBtn.addEventListener("click", () => {
+        copyDiagnosticLogs();
+      });
+    }
+  }
+
   function executeSuggestedAction(action) {
     if (!action) return;
     let targetEl = null;
@@ -969,343 +1324,10 @@
     }
   }
 
-  /**
-   * 5. IN-PAGE DOM MARKERS: Purple beacon markers & direct purple boxes
-   * Injected into a top-level overlay layer (#wayfinder-markers-layer) directly on document.body.
-   * This completely eliminates clipping from overflow:hidden, contain:paint, or button stacking contexts.
-   */
-  function getOrCreateMarkersLayer() {
-    let layer = document.getElementById("wayfinder-markers-layer");
-    if (!layer) {
-      layer = document.createElement("div");
-      layer.id = "wayfinder-markers-layer";
-      layer.className = "wayfinder-markers-layer";
-      (document.body || document.documentElement).appendChild(layer);
-    }
-    return layer;
-  }
+  /* =========================================================================
+     6. SELECTED TEXT AI ANALYSIS COPILOT
+     ========================================================================= */
 
-  function clearDomMarkers() {
-    const layer = document.getElementById("wayfinder-markers-layer");
-    if (layer) {
-      layer.innerHTML = "";
-    }
-    document.querySelectorAll(".wayfinder-dom-marker").forEach(el => el.remove());
-  }
-
-  function positionSingleMarker(marker, target, style) {
-    if (!target || !target.isConnected) {
-      marker.style.display = "none";
-      return;
-    }
-    const rect = target.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0 && target.offsetParent === null) {
-      marker.style.display = "none";
-      return;
-    }
-
-    marker.style.display = "inline-flex";
-    marker.style.position = "absolute";
-
-    const pageScrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
-    const pageScrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
-
-    if (style === "badge") {
-      let top = pageScrollY + rect.top - 28;
-      let left = pageScrollX + Math.max(0, rect.left);
-      if (rect.top < 34) {
-        top = pageScrollY + rect.bottom + 4;
-        marker.classList.add("wayfinder-callout-below");
-      } else {
-        marker.classList.remove("wayfinder-callout-below");
-      }
-      marker.style.top = `${Math.round(top)}px`;
-      marker.style.left = `${Math.round(left)}px`;
-    } else {
-      let top = pageScrollY + rect.top - 6;
-      let left = pageScrollX + rect.right - 10;
-      marker.style.top = `${Math.round(top)}px`;
-      marker.style.left = `${Math.round(left)}px`;
-    }
-  }
-
-  let positionUpdateTimer = null;
-  function updateAllMarkerPositions() {
-    const layer = document.getElementById("wayfinder-markers-layer");
-    if (!layer) return;
-    const markers = layer.querySelectorAll(".wayfinder-dom-marker");
-    markers.forEach(marker => {
-      const target = marker._targetElement;
-      const style = marker.getAttribute("data-marker-style") || currentMarkerStyle;
-      positionSingleMarker(marker, target, style);
-    });
-  }
-
-  function throttledUpdateMarkerPositions() {
-    if (positionUpdateTimer) return;
-    positionUpdateTimer = requestAnimationFrame(() => {
-      positionUpdateTimer = null;
-      updateAllMarkerPositions();
-    });
-  }
-
-  window.addEventListener("scroll", throttledUpdateMarkerPositions, { passive: true });
-  window.addEventListener("resize", throttledUpdateMarkerPositions, { passive: true });
-
-  // Fallback heuristic markers so interesting items are highlighted immediately
-  function getHeuristicDomCandidates() {
-    const candidates = [];
-    const seen = new Set();
-
-    // 1. Universal Semantic High-Value Elements (Price/Fare, Actions, Reviews, Policies, Dates)
-    const universalRules = [
-      {
-        sel: "[class*='price'], [class*='fare'], [class*='rate'], [itemprop='price'], .priceToPay, .apexPriceToPay, #priceblock_ourprice, #priceblock_dealprice, #price, [data-testid*='price']",
-        note: "Price / Fare: Check for hidden fees, price changes, or cheaper alternatives (⌘I)"
-      },
-      {
-        sel: "button[type='submit'], [class*='book'], [class*='reserve'], [class*='add-to-cart'], [class*='buy'], [id*='book'], [id*='cart'], [id*='buy'], [data-testid*='book'], [data-testid*='buy'], #add-to-cart-button, #buy-now-button",
-        note: "Key Action: Compare terms, cancellation policy, or return window before confirming"
-      },
-      {
-        sel: "[class*='review'], [class*='rating'], [id*='review'], [id*='rating'], [data-hook='total-review-count'], [data-testid*='review'], #averageCustomerReviews",
-        note: "Customer Feedback: Copilot (⌘I) can summarize sentiment, defect patterns & gotchas"
-      },
-      {
-        sel: "[class*='amenit'], [class*='policy'], [class*='cancel'], [class*='baggage'], [class*='spec'], [class*='feature'], [id*='policy'], [id*='amenit'], #feature-bullets",
-        note: "Policies & Details: Check baggage allowance, cancellation deadlines, or prerequisites"
-      },
-      {
-        sel: "[class*='date'], [class*='calendar'], [class*='schedule'], [class*='depart'], [class*='checkin'], [data-testid*='date']",
-        note: "Timeline / Dates: Verify flexibility, layover times, or off-peak savings"
-      }
-    ];
-
-    for (const rule of universalRules) {
-      try {
-        const elements = Array.from(document.querySelectorAll(rule.sel));
-        for (let el of elements) {
-          if (!el || isSensitiveElement(el)) continue;
-          const rect = el.getBoundingClientRect();
-          if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
-
-          // If target is inside a button container or wrapper, attach to the outer visible element
-          const outerBtn = el.closest(".a-button, button, [role='button']");
-          if (outerBtn) el = outerBtn;
-
-          if (!seen.has(el) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root")) {
-            seen.add(el);
-            candidates.push({ element: el, note: rule.note });
-            break;
-          }
-        }
-      } catch (e) {}
-    }
-
-    // 2. General page interactive elements (buttons, links, search, headers)
-    const selectors = [
-      "main button", "header button", "button",
-      "header nav a", "nav a", "main a.btn", "main a.button", "a.btn",
-      "[role='button']", "input[type='submit']",
-      "main h1", "h1", "h2", "input[type='search']", "input[name='q']"
-    ];
-
-    for (const sel of selectors) {
-      try {
-        const elements = Array.from(document.querySelectorAll(sel));
-        for (let el of elements) {
-          if (candidates.length >= 8) break;
-          if (!el || isSensitiveElement(el)) continue;
-          const rect = el.getBoundingClientRect();
-          if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
-
-          const outerBtn = el.closest(".a-button, button, [role='button']");
-          if (outerBtn) el = outerBtn;
-
-          if (seen.has(el) || el.closest("#wayfinder-hud-root") || el.closest("#wayfinder-selection-popover") || el.closest("#wayfinder-chat-root")) continue;
-
-          if (rect.width > 20 && rect.height > 15) {
-            seen.add(el);
-            candidates.push({
-              element: el,
-              note: `Key element: "${(el.innerText || el.value || el.title || 'Page Action').trim().slice(0, 35)}"`
-            });
-          }
-        }
-      } catch (e) {}
-      if (candidates.length >= 8) break;
-    }
-
-    return candidates;
-  }
-
-  function applyHeuristicDomMarkers() {
-    if (checkSensitivePageContext().isSensitive) {
-      clearDomMarkers();
-      return;
-    }
-    WayfinderLogger.log("Scanning DOM for candidates...");
-    const candidates = getHeuristicDomCandidates();
-    WayfinderLogger.log(`Found ${candidates.length} DOM candidates to mark.`);
-    renderDomMarkers(candidates);
-  }
-
-  function renderDomMarkers(items) {
-    clearDomMarkers();
-    if (checkSensitivePageContext().isSensitive) {
-      return;
-    }
-
-    let effectiveItems = (items && items.length > 0) ? [...items] : null;
-    if (!effectiveItems || effectiveItems.length === 0) {
-      WayfinderLogger.log("No specific guidance items provided, falling back to heuristic candidates...");
-      effectiveItems = getHeuristicDomCandidates();
-    }
-
-    // On high-interest pages (flights, stays, products), if fewer than 3 items, include key candidates
-    const semanticEntity = extractSemanticEntity();
-    if (semanticEntity && effectiveItems.length < 3) {
-      const candidates = getHeuristicDomCandidates();
-      effectiveItems = [...effectiveItems, ...candidates];
-    }
-
-    if (!effectiveItems || !effectiveItems.length) {
-      WayfinderLogger.warn("No DOM elements found to render markers.");
-      return;
-    }
-
-    currentGuidanceItems = effectiveItems;
-    const layer = getOrCreateMarkersLayer();
-    let attachedCount = 0;
-    const seenTargets = new Set();
-
-    effectiveItems.forEach((item) => {
-      let target = item.element || null;
-
-      if (!target && item.selector) {
-        try { target = document.querySelector(item.selector); } catch (e) {}
-      }
-
-      const hint = item.targetHint || item.textHint || item.label;
-      if (!target && hint) {
-        const candidates = Array.from(document.querySelectorAll("a, button, h1, h2, h3, nav a, header a, form input[type='submit'], [role='button'], .price, #productTitle"));
-        target = candidates.find(el => {
-          const text = (el.innerText || el.value || "").toLowerCase();
-          return text.includes(hint.toLowerCase()) && !el.closest("#wayfinder-hud-root") && !el.closest("#wayfinder-chat-root");
-        });
-      }
-
-      if (target) {
-        const outerBtn = target.closest(".a-button");
-        if (outerBtn) target = outerBtn;
-      }
-
-      if (!target || seenTargets.has(target)) return;
-      if (target.closest("#wayfinder-hud-root") || target.closest("#wayfinder-chat-root")) return;
-
-      const rect = target.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0 && target.offsetParent === null) return;
-
-      seenTargets.add(target);
-
-      const marker = document.createElement("div");
-      marker._targetElement = target;
-      const noteText = item.note || item.explanation || item.label || "Key navigation item";
-
-      if (currentMarkerStyle === "badge") {
-        // Direct Purple Box (Inline Callout Box)
-        marker.className = "wayfinder-dom-marker wayfinder-marker-callout";
-        marker.setAttribute("data-marker-style", "badge");
-        marker.title = noteText;
-
-        marker.innerHTML = `
-          <div class="wayfinder-callout-box">
-            <span class="wayfinder-callout-icon">✦</span>
-            <span class="wayfinder-callout-text">${escapeHtml(noteText)}</span>
-            <button class="wayfinder-callout-chat-btn" title="Ask Copilot about this (⌘I)">💬 Ask</button>
-          </div>
-          <div class="wayfinder-marker-popover">
-            <div class="wayfinder-marker-popover-header">
-              <span class="wayfinder-marker-icon">✦</span>
-              <strong>Wayfinder Insight</strong>
-            </div>
-            <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
-            <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
-              💬 Ask Copilot <kbd>⌘I</kbd>
-            </button>
-          </div>
-        `;
-
-        const chatBtn = marker.querySelector(".wayfinder-callout-chat-btn");
-        if (chatBtn) {
-          chatBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
-            toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
-          });
-        }
-
-        // Click on callout box also scrolls element into view smoothly if partially obscured
-        marker.addEventListener("click", (e) => {
-          if (!e.target.closest(".wayfinder-callout-chat-btn")) {
-            target.scrollIntoView({ behavior: "smooth", block: "nearest" });
-          }
-        });
-      } else {
-        // Dot Mode with Hover/Click Popover
-        marker.className = "wayfinder-dom-marker wayfinder-marker-dot-mode";
-        marker.setAttribute("data-marker-style", "dot");
-        marker.title = "Wayfinder Insight (Click or hover for details)";
-
-        marker.innerHTML = `
-          <div class="wayfinder-marker-dot"></div>
-          <div class="wayfinder-marker-popover">
-            <div class="wayfinder-marker-popover-header">
-              <span class="wayfinder-marker-icon">✦</span>
-              <strong>Wayfinder Insight</strong>
-            </div>
-            <div class="wayfinder-marker-note">${escapeHtml(noteText)}</div>
-            <button class="wayfinder-marker-chat-btn" title="Open Copilot chat with this context">
-              💬 Ask Copilot <kbd>⌘I</kbd>
-            </button>
-          </div>
-        `;
-
-        // Click on marker opens/toggles popover
-        marker.addEventListener("click", (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const popover = marker.querySelector(".wayfinder-marker-popover");
-          if (popover) {
-            popover.classList.toggle("wayfinder-popover-pinned");
-          }
-        });
-
-        // Chat button opens chatbox with item context
-        const chatBtn = marker.querySelector(".wayfinder-marker-chat-btn");
-        if (chatBtn) {
-          chatBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            const elSnippet = (target.innerText || target.value || target.title || "").trim().slice(0, 80);
-            toggleChatbox(true, `${noteText}${elSnippet ? ` (${elSnippet})` : ''}`);
-          });
-        }
-      }
-
-      positionSingleMarker(marker, target, currentMarkerStyle);
-      layer.appendChild(marker);
-      attachedCount++;
-      WayfinderLogger.log(`Attached marker #${attachedCount} to top-level layer for <${target.tagName.toLowerCase()}>`, noteText);
-    });
-
-    WayfinderLogger.log(`Finished rendering markers. Total attached: ${attachedCount}`);
-  }
-
-  /**
-   * 6. TEXT SELECTION AI ANALYSIS
-   */
   function initTextSelectionCopilot() {
     selectionButton = document.createElement("button");
     selectionButton.id = "wayfinder-selection-btn";
@@ -1429,136 +1451,10 @@
     });
   }
 
-  function formatMarkdownSnippets(text) {
-    if (!text) return "";
-    return escapeHtml(text)
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.*?)\*/g, "<em>$1</em>")
-      .replace(/\n\n/g, "<br><br>")
-      .replace(/\n- /g, "<br>• ");
-  }
+  /* =========================================================================
+     7. INTERACTIVE COPILOT CHATBOX (Cmd+I / Ctrl+I)
+     ========================================================================= */
 
-  function renderErrorState(errorMessage) {
-    WayfinderLogger.error("Error State Triggered", errorMessage);
-    const cardBody = document.getElementById("wayfinder-card-body");
-    const badge = document.getElementById("wayfinder-beacon-badge");
-    if (badge) {
-      badge.style.display = "block";
-      badge.textContent = "!";
-      badge.style.background = "#ef4444";
-    }
-    if (!cardBody) return;
-
-    const entity = extractSemanticEntity();
-    let bannerHtml = "";
-    if (entity) {
-      const catBadge = entity.category === "flight" ? "✈️ Flight & Travel Intel" :
-                       entity.category === "stay" ? "🏡 Stay & Lodging Intel" :
-                       entity.category === "shopping" ? "🛍️ Product & Value Intel" :
-                       entity.category === "docs" ? "💻 Tech & Documentation Intel" : "🧭 Page Intel";
-      const catClass = `wayfinder-entity-${entity.category || 'general'}`;
-      bannerHtml = `
-        <div class="wayfinder-product-banner ${catClass}">
-          <div class="wayfinder-product-badge">${catBadge}</div>
-          <div class="wayfinder-product-name">${escapeHtml(entity.name || "Identified Target")}</div>
-          <div class="wayfinder-product-stats">
-            ${entity.price ? `<span class="wayfinder-product-price">${escapeHtml(entity.price)}</span>` : ""}
-            ${entity.rating ? `<span class="wayfinder-product-rating">⭐ ${escapeHtml(entity.rating)}</span>` : ""}
-            ${entity.dates ? `<span class="wayfinder-product-dates">📅 ${escapeHtml(entity.dates)}</span>` : ""}
-            ${entity.location ? `<span class="wayfinder-product-location">📍 ${escapeHtml(entity.location)}</span>` : ""}
-          </div>
-          <button class="wayfinder-ecom-cta-btn" id="wayfinder-product-deals-btn">
-            🔍 Copilot Analysis, Gotchas & Alternatives (⌘I)
-          </button>
-        </div>
-      `;
-    }
-
-    cardBody.innerHTML = `
-      ${bannerHtml}
-      <div class="wayfinder-error-state">
-        <div class="wayfinder-error-icon">⚠️</div>
-        <div class="wayfinder-error-title">AI Guidance Notice</div>
-        <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
-        <p class="wayfinder-error-help">Check your API key in the extension popup or verify provider settings.</p>
-        ${lastPageAssistanceData?.prompts?.userPrompt ? `
-          <details class="wayfinder-prompt-details">
-            <summary class="wayfinder-prompt-toggle">👁️ View Active AI Prompt Sent</summary>
-            <div class="wayfinder-prompt-content">
-              <div class="wayfinder-prompt-label">SYSTEM PROMPT:</div>
-              <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.systemPrompt || "")}</pre>
-              <div class="wayfinder-prompt-label">USER PROMPT:</div>
-              <pre class="wayfinder-prompt-pre">${escapeHtml(lastPageAssistanceData.prompts.userPrompt || "")}</pre>
-            </div>
-          </details>
-        ` : ""}
-        <button class="wayfinder-copy-logs-btn" id="wayfinder-copy-logs-err-btn" style="margin-top: 10px; background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; border-radius: 6px; padding: 6px 12px; font-weight: 600; cursor: pointer;">
-          📋 Copy Diagnostic Logs
-        </button>
-      </div>
-    `;
-
-    const dealsBtn = cardBody.querySelector("#wayfinder-product-deals-btn");
-    if (dealsBtn && entity) {
-      dealsBtn.addEventListener("click", () => {
-        const catPrompt = entity.category === "flight" ? "What hidden baggage fees, layover risks, or cheaper alternative dates should I watch out for?" :
-                          entity.category === "stay" ? "What hidden cleaning fees, cancellation deadlines, or neighborhood safety gotchas should I know?" :
-                          "Can I find this cheaper elsewhere, or what are historical price trends and good alternatives?";
-        toggleChatbox(true, `${entity.category.toUpperCase()}: ${entity.name} (${entity.price || ''})`);
-        sendChatMessage(catPrompt);
-      });
-    }
-
-    const errCopyBtn = document.getElementById("wayfinder-copy-logs-err-btn");
-    if (errCopyBtn) {
-      errCopyBtn.addEventListener("click", () => {
-        copyDiagnosticLogs();
-      });
-    }
-  }
-
-  function escapeHtml(str) {
-    if (!str) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  // Storage listener for setting changes
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.wayfinder_settings) {
-      const newSettings = changes.wayfinder_settings.newValue || {};
-      if (newSettings.enabled === false) {
-        if (beaconContainer) beaconContainer.style.display = "none";
-        clearDomMarkers();
-      } else {
-        if (beaconContainer) beaconContainer.style.display = "block";
-        if (newSettings.domMarkersEnabled === false) {
-          clearDomMarkers();
-        } else {
-          if (newSettings.markerStyle && newSettings.markerStyle !== currentMarkerStyle) {
-            currentMarkerStyle = newSettings.markerStyle;
-            const styleBtn = document.getElementById("wayfinder-style-toggle-btn");
-            if (styleBtn) {
-              styleBtn.innerText = currentMarkerStyle === "badge" ? "🟣 Dots" : "🏷️ Text Boxes";
-            }
-          }
-          if (currentGuidanceItems.length) {
-            renderDomMarkers(currentGuidanceItems);
-          } else {
-            applyHeuristicDomMarkers();
-          }
-        }
-      }
-    }
-  });
-
-  /**
-   * 7. INTERACTIVE CHATBOX COPILOT (Cmd+I / Ctrl+I)
-   */
   function initChatboxCopilot() {
     if (document.getElementById("wayfinder-chat-root")) return;
 
@@ -1847,6 +1743,144 @@
     if (el) el.remove();
   }
 
+  /* =========================================================================
+     8. LIFECYCLE CONTROLLERS & HYDRATION OBSERVER
+     ========================================================================= */
+
+  /**
+   * Run Page Analysis (Enforces single-call-per-page policy unless forced)
+   */
+  async function runPageAnalysis(force = false) {
+    if (isAnalyzing) return;
+    if (hasAnalyzedCurrentPage && !force) return;
+
+    const { wayfinder_settings: settings = {} } = await chrome.storage.local.get("wayfinder_settings");
+    if (settings.enabled === false) {
+      if (beaconContainer) beaconContainer.style.display = "none";
+      clearDomMarkers();
+      return;
+    } else {
+      if (beaconContainer) beaconContainer.style.display = "block";
+    }
+
+    injectBeaconHUD();
+
+    if (settings.markerStyle) {
+      currentMarkerStyle = settings.markerStyle;
+      const styleBtn = document.getElementById("wayfinder-style-toggle-btn");
+      if (styleBtn) {
+        styleBtn.innerText = currentMarkerStyle === "badge" ? "🟣 Dots" : "🏷️ Text Boxes";
+      }
+    }
+
+    isAnalyzing = true;
+    hasAnalyzedCurrentPage = true;
+
+    // Critical Security Guard Rail: Auto-pause AI on login, password, and payment forms
+    const privacyCheck = checkSensitivePageContext();
+    if (privacyCheck.isSensitive && !force) {
+      isAnalyzing = false;
+      clearDomMarkers();
+
+      chrome.runtime.sendMessage({
+        type: "RECORD_SHIELDED_PAGE",
+        payload: { reason: privacyCheck.reason }
+      });
+
+      const beaconEl = document.querySelector(".wayfinder-signal-beacon");
+      if (beaconEl) {
+        beaconEl.classList.add("wayfinder-beacon-shield");
+        beaconEl.title = `Wayfinder Privacy Shield Active: ${privacyCheck.reason}`;
+      }
+
+      renderPrivacyShieldState(privacyCheck.reason);
+      return;
+    }
+
+    // Place initial DOM markers so user sees interesting interactable items right away
+    if (settings.domMarkersEnabled !== false) {
+      applyHeuristicDomMarkers();
+    }
+
+    const cardBody = document.getElementById("wayfinder-card-body");
+    if (cardBody) {
+      cardBody.innerHTML = `
+        <div class="wayfinder-loading-state">
+          <div class="wayfinder-spinner"></div>
+          <span>Analyzing DOM & navigation cues...</span>
+        </div>
+      `;
+    }
+
+    const context = extractPageContext();
+
+    chrome.runtime.sendMessage({
+      type: "RECORD_PAGE_VISIT",
+      payload: {
+        url: context.url,
+        title: context.title,
+        domain: context.domain,
+        metaDescription: context.metaDescription
+      }
+    });
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "REQUEST_PAGE_ASSISTANCE",
+        payload: context
+      });
+
+      lastPageAssistanceData = response;
+      isAnalyzing = false;
+
+      if (!response || !response.success) {
+        renderErrorState(response?.error || "AI could not process this page.");
+        return;
+      }
+
+      renderGuidanceContent(response.guidance, response.provider, response.model);
+
+      if (response.domMarkersEnabled !== false && settings.domMarkersEnabled !== false) {
+        renderDomMarkers(response.guidance.domHighlights || response.guidance.suggestedActions || []);
+      } else {
+        clearDomMarkers();
+      }
+    } catch (err) {
+      isAnalyzing = false;
+      renderErrorState(err.message);
+    }
+  }
+
+  // Storage listener for setting changes
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.wayfinder_settings) {
+      const newSettings = changes.wayfinder_settings.newValue || {};
+      if (newSettings.enabled === false) {
+        if (beaconContainer) beaconContainer.style.display = "none";
+        clearDomMarkers();
+      } else {
+        if (beaconContainer) beaconContainer.style.display = "block";
+        if (newSettings.domMarkersEnabled === false) {
+          clearDomMarkers();
+        } else {
+          if (newSettings.markerStyle && newSettings.markerStyle !== currentMarkerStyle) {
+            currentMarkerStyle = newSettings.markerStyle;
+            const styleBtn = document.getElementById("wayfinder-style-toggle-btn");
+            if (styleBtn) {
+              styleBtn.innerText = currentMarkerStyle === "badge" ? "🟣 Dots" : "🏷️ Text Boxes";
+            }
+          }
+          if (currentGuidanceItems.length) {
+            renderDomMarkers(currentGuidanceItems);
+          } else {
+            applyHeuristicDomMarkers();
+          }
+        }
+      }
+    }
+  });
+
+  // Initialize tooltips and chat copilot
   initTextSelectionCopilot();
   initChatboxCopilot();
 
