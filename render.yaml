@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: wayfinder-ai-gateway
+    env: node
+    plan: starter
+    buildCommand: ""
+    startCommand: node server/index.js
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false

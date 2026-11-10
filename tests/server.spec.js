@@ -172,4 +172,36 @@ test.describe('Wayfinder AI Subscription Server Gateway Tests', () => {
     expect(verifyData.tier).toBe('pro');
   });
 
+  test('SRV-7: POST /api/v1/auth/lookup finds active license by customer email', async () => {
+    // Lookup the paying customer created in SRV-6
+    const res = await fetch(`${BASE_URL}/api/v1/auth/lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'payingcustomer@example.com' })
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.licenseKey.startsWith('wf_live_')).toBe(true);
+    expect(data.tier).toBe('pro');
+
+    // Lookup non-existent customer
+    const failRes = await fetch(`${BASE_URL}/api/v1/auth/lookup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'notfound@example.com' })
+    });
+    expect(failRes.status).toBe(404);
+  });
+
+  test('SRV-8: GET /checkout/success renders branded HTML page with license key', async () => {
+    const res = await fetch(`${BASE_URL}/checkout/success?email=payingcustomer@example.com`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    expect(html).toContain('Wayfinder Pro Active');
+    expect(html).toContain('wf_live_');
+    expect(html).toContain('Copy License Key');
+  });
+
 });

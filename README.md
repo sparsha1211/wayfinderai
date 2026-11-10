@@ -197,6 +197,23 @@ Read the full [Privacy Policy & Security Architecture](PRIVACY.md).
 
 ---
 
+## 💼 Commercial SaaS, Economics & Deployment
+
+For subscription monetization, commercial projections, and 0-to-1 cloud deployment instructions, explore the [`marketing/`](marketing/) strategy suite:
+
+* **[Commercial Unit Economics & Financial Projections](marketing/commercial-unit-economics.md)**: Breakdown of the $9.99/mo subscription model, COGS per user ($0.108/mo token cost + $0.59 Stripe fee = **~93% Gross Margin**), financial scale tables (100 to 10,000 subscribers), CAC/LTV targets, and usage guardrails.
+* **[Go-To-Market & Commercial Launch Plan](marketing/go-to-market-plan.md)**: Product positioning, Chrome Web Store Optimization (ASO), Product Hunt launch strategy, viral demo clips, and referral loops.
+* **[Production Deployment & Stripe Billing Guide](marketing/deployment-and-billing-guide.md)**: 1-click cloud deployment on Railway/Render, Stripe recurring product setup, webhook automation (`checkout.session.completed`), and Chrome Web Store publishing.
+* **[Product Roadmap & Multi-Year Vision](marketing/product-roadmap.md)**: Milestones across Q1-Q4 including multimodal vision reasoning, Firefox/Safari support, and Team/Enterprise workspaces ($79/mo).
+
+To build a clean zip package for Chrome Web Store Developer Dashboard upload:
+```bash
+npm run package:extension
+# Outputs: dist/wayfinder-ai-chrome-extension.zip
+```
+
+---
+
 ## 📄 License
 
 Wayfinder AI is free and open-source software licensed under the [MIT License](LICENSE).

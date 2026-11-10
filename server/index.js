@@ -4,7 +4,7 @@
  */
 
 import http from "node:http";
-import { validateLicense, createLicense, SUBSCRIPTION_TIERS } from "./auth.js";
+import { validateLicense, createLicense, findLicenseByEmail, SUBSCRIPTION_TIERS } from "./auth.js";
 import { checkRateLimit, getUsageStatus } from "./rateLimiter.js";
 import { executeGuidanceProxy, executeChatProxy } from "./aiProxy.js";
 import { handleStripeEvent, verifyStripeSignature } from "./stripeWebhook.js";
@@ -24,6 +24,12 @@ function sendJson(res, statusCode, data) {
   setCorsHeaders(res);
   res.writeHead(statusCode, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
+}
+
+function sendHtml(res, statusCode, html) {
+  setCorsHeaders(res);
+  res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(html);
 }
 
 /**
@@ -123,6 +129,93 @@ const server = http.createServer(async (req, res) => {
         expiresAt: license.expiresAt,
         dailyLimit: SUBSCRIPTION_TIERS.trial.dailyLimit
       });
+    }
+
+    // 3b. Lookup License by Email (For user retrieval)
+    if (req.method === "POST" && pathname === "/api/v1/auth/lookup") {
+      const body = await parseBody(req);
+      const email = body.email;
+      if (!email) {
+        return sendJson(res, 400, { success: false, error: "Email is required." });
+      }
+      const license = findLicenseByEmail(email);
+      if (!license) {
+        return sendJson(res, 404, { success: false, error: "No active license found for this email address." });
+      }
+      return sendJson(res, 200, {
+        success: true,
+        licenseKey: license.licenseKey,
+        tier: license.tier,
+        expiresAt: license.expiresAt
+      });
+    }
+
+    // 3c. Customer Checkout Success & License Display Web Page
+    if (req.method === "GET" && (pathname === "/checkout/success" || pathname === "/success")) {
+      const email = url.searchParams.get("email") || "";
+      const license = email ? findLicenseByEmail(email) : null;
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wayfinder AI — Subscription Activated</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; max-width: 520px; width: 100%; padding: 36px 32px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); text-align: center; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(99,102,241,0.15); border: 1px solid #6366f1; color: #a5b4fc; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 20px; }
+    h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; color: #ffffff; }
+    p.subtitle { color: #94a3b8; font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+    .key-box { background: #090d16; border: 1px dashed #475569; border-radius: 10px; padding: 16px; margin-bottom: 24px; }
+    .key-code { font-family: "SF Mono", Monaco, Consolas, monospace; font-size: 15px; color: #38bdf8; word-break: break-all; letter-spacing: 0.5px; }
+    .copy-btn { margin-top: 12px; background: #4f46e5; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background 0.15s; }
+    .copy-btn:hover { background: #4338ca; }
+    .steps { text-align: left; background: #0f172a; border-radius: 10px; padding: 18px 20px; margin-top: 24px; font-size: 13px; line-height: 1.6; color: #cbd5e1; }
+    .steps ol { padding-left: 20px; }
+    .steps li { margin-bottom: 6px; }
+    .lookup-form { display: flex; gap: 8px; margin-top: 14px; }
+    .lookup-input { flex: 1; padding: 10px 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 14px; }
+    .lookup-btn { background: #334155; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .lookup-btn:hover { background: #475569; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">✨ Payment Verified • Wayfinder Pro Active</div>
+    <h1>Welcome to Wayfinder AI</h1>
+    <p class="subtitle">Your subscription is now live. Use your secret license key below to activate unlimited proactive web intelligence in your browser.</p>
+
+    ${license ? `
+    <div class="key-box">
+      <div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 6px;">Your Pro License Key</div>
+      <div class="key-code" id="licenseKey">${license.licenseKey}</div>
+      <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('licenseKey').innerText); this.innerText='✓ Copied to Clipboard!';">📋 Copy License Key</button>
+    </div>
+    ` : `
+    <div class="key-box">
+      <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 8px;">Enter the email you used at Stripe Checkout to reveal your key:</div>
+      <form class="lookup-form" method="GET" action="/checkout/success">
+        <input class="lookup-input" type="email" name="email" placeholder="you@domain.com" required value="${email}">
+        <button class="lookup-btn" type="submit">Find Key</button>
+      </form>
+      ${email ? `<div style="color: #f87171; font-size: 12px; margin-top: 8px;">No active license found for "${email}". If payment just processed, please wait a few seconds and try again.</div>` : ''}
+    </div>
+    `}
+
+    <div class="steps">
+      <strong style="color: #ffffff; display: block; margin-bottom: 6px;">How to activate in your Chrome Extension:</strong>
+      <ol>
+        <li>Click the <strong>Wayfinder AI</strong> icon in your Chrome toolbar.</li>
+        <li>Select <strong>Wayfinder Cloud (Subscription)</strong> from the AI Provider list.</li>
+        <li>Paste your license key above and click <strong>Save</strong>.</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>`;
+      return sendHtml(res, 200, html);
     }
 
     // 4. Secure AI Page Guidance Proxy

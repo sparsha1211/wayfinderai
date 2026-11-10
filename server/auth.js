@@ -194,3 +194,20 @@ export function findLicenseBySubscriptionId(subId) {
   }
   return null;
 }
+
+/**
+ * Find active license by customer email
+ */
+export function findLicenseByEmail(email) {
+  if (!email || typeof email !== "string") return null;
+  const target = email.toLowerCase().trim();
+  licensesStore = loadLicenses();
+  // Reverse to find the latest active license for this email
+  const licenses = Object.values(licensesStore).reverse();
+  for (const license of licenses) {
+    if (license.email && license.email.toLowerCase().trim() === target && license.active) {
+      return license;
+    }
+  }
+  return null;
+}
