@@ -169,6 +169,14 @@
           <span class="metric-value" id="totalTokensMetric">0</span>
           <span class="metric-title">Total Tokens</span>
         </div>
+        <div class="metric-card cost-card">
+          <span class="metric-value" id="estimatedCostMetric">$0.0000</span>
+          <span class="metric-title">Est. Cost (USD)</span>
+        </div>
+        <div class="metric-card shield-card">
+          <span class="metric-value" id="sensitiveShieldedMetric">0</span>
+          <span class="metric-title">🛡️ Pages Shielded</span>
+        </div>
       </div>
 
       <div class="token-detail-card">
@@ -181,12 +189,28 @@
           <strong id="completionTokensMetric">0</strong>
         </div>
         <div class="token-row">
+          <span>Average Latency:</span>
+          <strong id="avgLatencyMetric">-</strong>
+        </div>
+        <div class="token-row">
           <span>Last Request:</span>
           <strong id="lastCallMetric">Never</strong>
         </div>
       </div>
 
-      <div class="section-label" style="margin-top: 14px;">Calls by Provider</div>
+      <!-- Cost & Pricing Reference Box -->
+      <div class="cost-info-box">
+        <div class="cost-info-header">
+          <span>💰 Transparent Pricing Reference</span>
+        </div>
+        <p class="cost-info-desc">
+          <strong>OpenAI (GPT-4o-mini):</strong> ~$0.00019 / page (~5,200 pages per $1.00 USD).<br>
+          <strong>Claude (Haiku 3.5):</strong> ~$0.00120 / page (~830 pages per $1.00 USD).<br>
+          <strong>Ollama (Local AI):</strong> 100% Free & Unlimited on your own Mac.
+        </p>
+      </div>
+
+      <div class="section-label" style="margin-top: 14px;">Calls & Cost by Provider</div>
       <div id="providerBreakdownList" class="breakdown-list">
         <span class="empty-state">No calls recorded yet.</span>
       </div>

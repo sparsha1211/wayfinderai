@@ -36,8 +36,20 @@ const DEFAULT_METRICS = {
   promptTokens: 0,
   completionTokens: 0,
   totalTokens: 0,
+  estimatedCostUsd: 0,
+  totalLatencyMs: 0,
+  sensitivePagesShielded: 0,
   lastCallTimestamp: null,
   providerBreakdown: {}
+};
+
+const PROVIDER_RATES = {
+  openai: { promptRate: 0.15 / 1000000, completionRate: 0.60 / 1000000 },      // $0.15 / $0.60 per 1M (gpt-4o-mini)
+  claude: { promptRate: 0.80 / 1000000, completionRate: 4.00 / 1000000 },      // $0.80 / $4.00 per 1M (Haiku 3.5)
+  openrouter: { promptRate: 0.05 / 1000000, completionRate: 0.08 / 1000000 },  // ~$0.05 / $0.08 per 1M
+  meta: { promptRate: 0.05 / 1000000, completionRate: 0.08 / 1000000 },        // ~$0.05 / $0.08 per 1M
+  ollama: { promptRate: 0, completionRate: 0 },                                // Free / Local
+  chrome_builtin: { promptRate: 0, completionRate: 0 }                         // Free / Local
 };
 
 const MAX_DEBUG_LOGS = 30;
@@ -57,18 +69,34 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 // Record Metrics Helper
-async function recordMetrics(providerId, usage) {
+async function recordMetrics(providerId, usage, durationMs = 0) {
   const data = await chrome.storage.local.get("wayfinder_metrics");
   const metrics = data.wayfinder_metrics || { ...DEFAULT_METRICS };
 
+  const rate = PROVIDER_RATES[providerId] || { promptRate: 0.15 / 1000000, completionRate: 0.60 / 1000000 };
+  const pTokens = usage?.promptTokens || 0;
+  const cTokens = usage?.completionTokens || 0;
+  const callCost = (pTokens * rate.promptRate) + (cTokens * rate.completionRate);
+
   metrics.totalCalls = (metrics.totalCalls || 0) + 1;
-  metrics.promptTokens = (metrics.promptTokens || 0) + (usage?.promptTokens || 0);
-  metrics.completionTokens = (metrics.completionTokens || 0) + (usage?.completionTokens || 0);
-  metrics.totalTokens = (metrics.totalTokens || 0) + (usage?.totalTokens || 0);
+  metrics.promptTokens = (metrics.promptTokens || 0) + pTokens;
+  metrics.completionTokens = (metrics.completionTokens || 0) + cTokens;
+  metrics.totalTokens = (metrics.totalTokens || 0) + (usage?.totalTokens || (pTokens + cTokens));
+  metrics.estimatedCostUsd = (metrics.estimatedCostUsd || 0) + callCost;
+  if (durationMs > 0) {
+    metrics.totalLatencyMs = (metrics.totalLatencyMs || 0) + durationMs;
+  }
   metrics.lastCallTimestamp = Date.now();
 
   metrics.providerBreakdown = metrics.providerBreakdown || {};
-  metrics.providerBreakdown[providerId] = (metrics.providerBreakdown[providerId] || 0) + 1;
+  if (!metrics.providerBreakdown[providerId]) {
+    metrics.providerBreakdown[providerId] = { calls: 0, tokens: 0, cost: 0 };
+  } else if (typeof metrics.providerBreakdown[providerId] === "number") {
+    metrics.providerBreakdown[providerId] = { calls: metrics.providerBreakdown[providerId], tokens: 0, cost: 0 };
+  }
+  metrics.providerBreakdown[providerId].calls += 1;
+  metrics.providerBreakdown[providerId].tokens += (usage?.totalTokens || (pTokens + cTokens));
+  metrics.providerBreakdown[providerId].cost = (metrics.providerBreakdown[providerId].cost || 0) + callCost;
 
   await chrome.storage.local.set({ wayfinder_metrics: metrics });
   return metrics;
@@ -157,6 +185,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "RECORD_SHIELDED_PAGE") {
+    (async () => {
+      const data = await chrome.storage.local.get("wayfinder_metrics");
+      const metrics = data.wayfinder_metrics || { ...DEFAULT_METRICS };
+      metrics.sensitivePagesShielded = (metrics.sensitivePagesShielded || 0) + 1;
+      await chrome.storage.local.set({ wayfinder_metrics: metrics });
+      sendResponse({ success: true, count: metrics.sensitivePagesShielded });
+    })().catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (message.type === "RESET_METRICS") {
     chrome.storage.local.set({ wayfinder_metrics: DEFAULT_METRICS })
       .then(() => sendResponse({ success: true }))
@@ -173,7 +212,7 @@ async function handleTestConnection({ providerId, apiKey, endpoint, model }) {
   try {
     const result = await AIService.testConnection({ providerId, apiKey, endpoint, model });
     const durationMs = Date.now() - startTime;
-    await recordMetrics(providerId, result.usage);
+    await recordMetrics(providerId, result.usage, durationMs);
 
     await logDebugEntry({
       type: "TEST_CONNECTION",
@@ -315,7 +354,7 @@ Think carefully about what the user is trying to accomplish and how you can proa
     });
 
     const durationMs = Date.now() - startTime;
-    await recordMetrics(providerId, usage);
+    await recordMetrics(providerId, usage, durationMs);
 
     // Save debug log if debug mode enabled or recent
     await logDebugEntry({
@@ -423,7 +462,7 @@ Keep formatting clean with bullet points and bold highlights. Keep response unde
     });
 
     const durationMs = Date.now() - startTime;
-    await recordMetrics(providerId, usage);
+    await recordMetrics(providerId, usage, durationMs);
 
     await logDebugEntry({
       type: "TEXT_SELECTION_ANALYSIS",
@@ -528,7 +567,7 @@ User Question:
     });
 
     const durationMs = Date.now() - startTime;
-    await recordMetrics(providerId, usage);
+    await recordMetrics(providerId, usage, durationMs);
 
     await logDebugEntry({
       type: "CHAT_WITH_PAGE_CONTEXT",

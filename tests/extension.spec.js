@@ -10,6 +10,7 @@ const configPath = path.resolve(__dirname, 'test.config.json');
 const samplePagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/sample-page.html');
 const flightPagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/flight-booking-page.html');
 const stayPagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/stay-booking-page.html');
+const loginPaymentPagePath = 'file://' + path.resolve(__dirname, '../e2e-fixtures/login-payment-page.html');
 
 test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
   let context;
@@ -550,6 +551,53 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
     await resetPopup.waitForTimeout(400);
     await resetPopup.close();
 
+    await webPage.close();
+  });
+
+  test('E2E-17: Critical security guard rail automatically triggers Privacy Shield on password and payment forms', async () => {
+    // 1. Visit page with login and payment forms
+    const webPage = await context.newPage();
+    await webPage.goto(loginPaymentPagePath);
+
+    // Verify Privacy Shield Beacon appears with shield class
+    const beacon = webPage.locator('#wayfinder-hud-root');
+    await expect(beacon).toBeVisible({ timeout: 5000 });
+    const beaconSignal = webPage.locator('.wayfinder-signal-beacon');
+    await expect(beaconSignal).toHaveClass(/wayfinder-beacon-shield/, { timeout: 5000 });
+
+    // Open Beacon card
+    await beaconSignal.click();
+
+    const overlayCard = webPage.locator('.wayfinder-overlay-card');
+    await expect(overlayCard).toBeVisible({ timeout: 5000 });
+
+    // Verify Privacy Shield card is displayed prominently
+    const shieldCard = overlayCard.locator('.wayfinder-privacy-shield-card');
+    await expect(shieldCard).toBeVisible({ timeout: 5000 });
+    await expect(shieldCard.locator('.wayfinder-shield-title')).toHaveText('Privacy Shield Active');
+
+    // Verify DOM markers are strictly disabled on password and payment forms
+    const markers = webPage.locator('.wayfinder-dom-marker');
+    expect(await markers.count()).toBe(0);
+
+    // 2. Open popup and verify Metrics tab reflects shielded pages & estimated cost
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    // Switch to Metrics Tab
+    await popupPage.click('button[data-tab="tab-metrics"]');
+
+    const shieldedMetric = popupPage.locator('#sensitiveShieldedMetric');
+    await expect(shieldedMetric).toBeVisible();
+    const shieldedCount = parseInt(await shieldedMetric.innerText(), 10);
+    expect(shieldedCount).toBeGreaterThan(0);
+
+    const costMetric = popupPage.locator('#estimatedCostMetric');
+    await expect(costMetric).toBeVisible();
+    const costText = await costMetric.innerText();
+    expect(costText.startsWith('$')).toBe(true);
+
+    await popupPage.close();
     await webPage.close();
   });
 });

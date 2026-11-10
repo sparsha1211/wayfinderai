@@ -146,6 +146,132 @@
   }
 
   /**
+   * CRITICAL SECURITY GUARD RAILS: Passwords & Payments
+   * Multi-tiered protection: Automatic Shielding, DOM element exclusion, & Regex PII Sanitization.
+   */
+  function sanitizeSensitiveText(text) {
+    if (!text || typeof text !== "string") return "";
+    return text
+      // Credit card numbers (standard 16-digit or spaced)
+      .replace(/\b(?:\d{4}[ -]?){3}\d{4}\b/g, "[CARD_REDACTED]")
+      .replace(/\b\d{4}[ -]?\d{6}[ -]?\d{5}\b/g, "[CARD_REDACTED]") // Amex
+      // CVV / CVC / Security codes
+      .replace(/\b(?:cvv|cvc|cid|security code)[\s:=]*([0-9]{3,4})\b/gi, "[CVV_REDACTED]")
+      // Password strings in key-value or query format (e.g. password=xyz)
+      .replace(/(?:password|passwd|pwd|secret)[\s:=]+([^\s&,]{3,})/gi, "[PASSWORD_REDACTED]")
+      // US Social Security Numbers
+      .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[SSN_REDACTED]")
+      // International Bank Account Numbers (IBAN)
+      .replace(/\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b/g, "[IBAN_REDACTED]")
+      // Cryptocurrency addresses (BTC / ETH)
+      .replace(/\b(0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b/g, "[CRYPTO_ADDR_REDACTED]")
+      // API Keys and Bearer auth tokens
+      .replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|ghp_[a-zA-Z0-9]{36}|bearer\s+[a-zA-Z0-9._~+/-]+=*)\b/gi, "[KEY_REDACTED]")
+      // Email addresses
+      .replace(/\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, "[EMAIL_REDACTED]");
+  }
+
+  function isSensitiveElement(el) {
+    if (!el || !(el instanceof Element)) return false;
+    const tag = el.tagName.toLowerCase();
+    const type = (el.getAttribute("type") || "").toLowerCase();
+    const auto = (el.getAttribute("autocomplete") || "").toLowerCase();
+    const name = (el.getAttribute("name") || "").toLowerCase();
+    const id = (el.id || "").toLowerCase();
+    const cls = (typeof el.className === "string" ? el.className : "").toLowerCase();
+    const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+    const combined = `${tag} ${type} ${auto} ${name} ${id} ${cls} ${aria}`;
+
+    if (type === "password" || type === "hidden") return true;
+    if (/passw|credit|card|cvv|cvc|cid|token|auth|secret|ssn|iban|routing|billing|expir/i.test(combined)) return true;
+
+    // Check if inside a checkout payment form, billing section, or login form
+    if (el.closest("form[action*='login'], form[action*='signin'], form[action*='pay'], form[action*='checkout'], form[id*='payment'], form[id*='checkout'], [class*='payment-form']")) {
+      if (tag === "input" || tag === "select" || tag === "textarea") return true;
+    }
+
+    return false;
+  }
+
+  function checkSensitivePageContext() {
+    const url = window.location.href.toLowerCase();
+    const path = window.location.pathname.toLowerCase();
+
+    // 1. Sensitive URL paths and domains (checkout, payment gateways, login, banking)
+    const sensitivePatterns = [
+      "/checkout/payment", "/checkout/billing", "/pay", "/payment", "/billing",
+      "/login", "/signin", "/signup", "/register", "/auth", "/oauth",
+      "/account/password", "/forgot-password", "/reset-password",
+      "paypal.com", "stripe.com", "checkout.stripe.com", "pay.google.com"
+    ];
+
+    for (const pat of sensitivePatterns) {
+      if (url.includes(pat) || path.startsWith(pat)) {
+        return { isSensitive: true, reason: "Sensitive payment, billing, or authentication page" };
+      }
+    }
+
+    // 2. DOM inspection: check for live password or payment inputs
+    const passwordEl = document.querySelector("input[type='password'], [autocomplete*='password']");
+    if (passwordEl) {
+      return { isSensitive: true, reason: "Login or password form detected" };
+    }
+
+    const paymentEl = document.querySelector(
+      "[autocomplete*='cc-'], [autocomplete*='card'], [data-elements-stable-field-name='cardNumber'], " +
+      "input[name*='cardnumber' i], input[name*='cvv' i], input[name*='cvc' i], input[id*='creditcard' i], " +
+      "iframe[src*='stripe' i], iframe[src*='paypal' i], iframe[src*='braintree' i]"
+    );
+    if (paymentEl) {
+      return { isSensitive: true, reason: "Credit card or payment form detected" };
+    }
+
+    return { isSensitive: false };
+  }
+
+  function renderPrivacyShieldState(reason) {
+    const cardBody = document.getElementById("wayfinder-card-body");
+    const badge = document.getElementById("wayfinder-beacon-badge");
+    if (badge) {
+      badge.style.display = "block";
+      badge.textContent = "🛡️";
+      badge.style.background = "#10b981";
+      badge.style.borderColor = "#059669";
+    }
+    if (!cardBody) return;
+
+    cardBody.innerHTML = `
+      <div class="wayfinder-privacy-shield-card">
+        <div class="wayfinder-shield-header">
+          <span class="wayfinder-shield-icon">🛡️</span>
+          <div>
+            <div class="wayfinder-shield-title">Privacy Shield Active</div>
+            <div class="wayfinder-shield-subtitle">${escapeHtml(reason)}</div>
+          </div>
+        </div>
+        <p class="wayfinder-shield-desc">
+          Wayfinder AI has automatically paused analysis on this page to prevent any transmission of credentials, passwords, or payment info.
+        </p>
+        <div class="wayfinder-shield-guarantees">
+          <div class="shield-guarantee-item"><span>🔒</span> <strong>Zero Data Sent:</strong> No keystrokes or page text sent to AI.</div>
+          <div class="shield-guarantee-item"><span>🛡️</span> <strong>DOM Markers Disabled:</strong> Input elements remain untouched.</div>
+          <div class="shield-guarantee-item"><span>⚡</span> <strong>100% Client-Side:</strong> Evaluated entirely on your device.</div>
+        </div>
+        <button class="wayfinder-shield-force-btn" id="wayfinder-shield-force-btn" title="Analyze only non-sensitive general content">
+          Scan Non-Sensitive Content (Override)
+        </button>
+      </div>
+    `;
+
+    const forceBtn = document.getElementById("wayfinder-shield-force-btn");
+    if (forceBtn) {
+      forceBtn.addEventListener("click", () => {
+        runPageAnalysis(true);
+      });
+    }
+  }
+
+  /**
    * 1. Universal Semantic Entity Extraction (Zero domain hardcoding)
    * Inspects Schema.org JSON-LD microdata, OpenGraph tags, and universal DOM cues.
    */
@@ -588,6 +714,27 @@
     isAnalyzing = true;
     hasAnalyzedCurrentPage = true;
 
+    // Critical Security Guard Rail: Auto-pause AI on login, password, and payment forms
+    const privacyCheck = checkSensitivePageContext();
+    if (privacyCheck.isSensitive && !force) {
+      isAnalyzing = false;
+      clearDomMarkers();
+
+      chrome.runtime.sendMessage({
+        type: "RECORD_SHIELDED_PAGE",
+        payload: { reason: privacyCheck.reason }
+      });
+
+      const beaconEl = document.querySelector(".wayfinder-signal-beacon");
+      if (beaconEl) {
+        beaconEl.classList.add("wayfinder-beacon-shield");
+        beaconEl.title = `Wayfinder Privacy Shield Active: ${privacyCheck.reason}`;
+      }
+
+      renderPrivacyShieldState(privacyCheck.reason);
+      return;
+    }
+
     // Place initial DOM markers so user sees interesting interactable items right away
     if (settings.domMarkersEnabled !== false) {
       applyHeuristicDomMarkers();
@@ -938,7 +1085,7 @@
       try {
         const elements = Array.from(document.querySelectorAll(rule.sel));
         for (let el of elements) {
-          if (!el) continue;
+          if (!el || isSensitiveElement(el)) continue;
           const rect = el.getBoundingClientRect();
           if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
 
@@ -968,7 +1115,7 @@
         const elements = Array.from(document.querySelectorAll(sel));
         for (let el of elements) {
           if (candidates.length >= 8) break;
-          if (!el) continue;
+          if (!el || isSensitiveElement(el)) continue;
           const rect = el.getBoundingClientRect();
           if (rect.width === 0 && rect.height === 0 && el.offsetParent === null) continue;
 
@@ -993,6 +1140,10 @@
   }
 
   function applyHeuristicDomMarkers() {
+    if (checkSensitivePageContext().isSensitive) {
+      clearDomMarkers();
+      return;
+    }
     WayfinderLogger.log("Scanning DOM for candidates...");
     const candidates = getHeuristicDomCandidates();
     WayfinderLogger.log(`Found ${candidates.length} DOM candidates to mark.`);
@@ -1001,6 +1152,9 @@
 
   function renderDomMarkers(items) {
     clearDomMarkers();
+    if (checkSensitivePageContext().isSensitive) {
+      return;
+    }
 
     let effectiveItems = (items && items.length > 0) ? [...items] : null;
     if (!effectiveItems || effectiveItems.length === 0) {
@@ -1234,7 +1388,7 @@
         const res = await chrome.runtime.sendMessage({
           type: "ANALYZE_SELECTED_TEXT",
           payload: {
-            selectedText: text,
+            selectedText: sanitizeSensitiveText(text),
             pageUrl: window.location.href,
             pageTitle: document.title
           }
@@ -1604,8 +1758,9 @@
   async function sendChatMessage(queryText) {
     if (isSendingChat) return;
     const input = document.getElementById("wayfinder-chat-input");
-    const query = (queryText || (input ? input.value : "")).trim();
-    if (!query) return;
+    const rawQuery = (queryText || (input ? input.value : "")).trim();
+    if (!rawQuery) return;
+    const query = sanitizeSensitiveText(rawQuery);
 
     if (input && !queryText) {
       input.value = "";
@@ -1625,7 +1780,7 @@
         payload: {
           query,
           pageContext: pageCtx,
-          selectedText: chatContext,
+          selectedText: sanitizeSensitiveText(chatContext),
           chatHistory
         }
       });
@@ -1706,7 +1861,9 @@
 
   // 1. Initial heuristic DOM scan at 400ms (Local DOM only, 0 network requests)
   setTimeout(() => {
-    applyHeuristicDomMarkers();
+    if (!checkSensitivePageContext().isSensitive) {
+      applyHeuristicDomMarkers();
+    }
   }, 400);
 
   // 2. Main Page Analysis at 1000ms (Exactly 1 network request per page load/refresh)
@@ -1714,8 +1871,9 @@
     runPageAnalysis();
   }, 1000);
 
-  // 3. Post-hydration resilience check at 2800ms (Local DOM only, 0 network requests) to catch Amazon's late-rendered price & buy box
+  // 3. Post-hydration resilience check at 2800ms
   setTimeout(() => {
+    if (checkSensitivePageContext().isSensitive) return;
     const activeMarkers = document.querySelectorAll(".wayfinder-dom-marker").length;
     if (activeMarkers < 2) {
       WayfinderLogger.log("Post-hydration resilience check: refreshing on-page markers...");

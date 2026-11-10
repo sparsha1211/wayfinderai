@@ -359,6 +359,32 @@ document.addEventListener("DOMContentLoaded", async () => {
     promptTokensMetric.textContent = (metrics.promptTokens || 0).toLocaleString();
     completionTokensMetric.textContent = (metrics.completionTokens || 0).toLocaleString();
 
+    // Estimated Cost
+    const cost = metrics.estimatedCostUsd || 0;
+    const costEl = document.getElementById("estimatedCostMetric");
+    if (costEl) {
+      costEl.textContent = cost > 0 && cost < 0.01
+        ? `$${cost.toFixed(4)}`
+        : `$${cost.toFixed(2)}`;
+    }
+
+    // Shielded Pages Counter
+    const shieldEl = document.getElementById("sensitiveShieldedMetric");
+    if (shieldEl) {
+      shieldEl.textContent = (metrics.sensitivePagesShielded || 0).toLocaleString();
+    }
+
+    // Average Latency
+    const avgLatencyEl = document.getElementById("avgLatencyMetric");
+    if (avgLatencyEl) {
+      if (metrics.totalCalls > 0 && metrics.totalLatencyMs) {
+        const avg = Math.round(metrics.totalLatencyMs / metrics.totalCalls);
+        avgLatencyEl.textContent = `${avg.toLocaleString()} ms`;
+      } else {
+        avgLatencyEl.textContent = "-";
+      }
+    }
+
     if (metrics.lastCallTimestamp) {
       const dt = new Date(metrics.lastCallTimestamp);
       lastCallMetric.textContent = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -370,12 +396,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     const entries = Object.entries(breakdown);
     if (entries.length > 0) {
       providerBreakdownList.innerHTML = entries
-        .map(([prov, count]) => `
-          <div class="breakdown-item">
-            <span>${escapeHtml(PROVIDERS[prov]?.name || prov)}</span>
-            <strong>${count} calls</strong>
-          </div>
-        `).join("");
+        .map(([prov, stats]) => {
+          const calls = typeof stats === "object" ? stats.calls : stats;
+          const tokens = typeof stats === "object" ? (stats.tokens || 0) : 0;
+          const provCost = typeof stats === "object" && stats.cost
+            ? (stats.cost < 0.01 ? `$${stats.cost.toFixed(4)}` : `$${stats.cost.toFixed(2)}`)
+            : (prov === "ollama" || prov === "chrome_builtin" ? "Free" : "-");
+
+          return `
+            <div class="breakdown-item">
+              <div>
+                <strong>${escapeHtml(PROVIDERS[prov]?.name || prov)}</strong>
+                <small style="display:block; color:#64748b; font-size:10.5px;">${tokens.toLocaleString()} tokens • ${provCost}</small>
+              </div>
+              <span class="breakdown-badge">${calls} calls</span>
+            </div>
+          `;
+        }).join("");
     } else {
       providerBreakdownList.innerHTML = `<span class="empty-state">No calls recorded yet.</span>`;
     }

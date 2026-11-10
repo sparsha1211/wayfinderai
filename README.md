@@ -29,26 +29,36 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
      - **Mode B (🏷️ Direct Box Mode)**: Displays direct text insights immediately inside stylish purple callout boxes without needing to hover! Includes smart positioning and UX preservation to keep target buttons easily clickable.
    - Toggle right from the HUD header (`🏷️ Text Boxes` / `🟣 Dots`) or in the popup settings under **Marker Display Mode**.
 
-5. **Predictable Navigation Analysis (Exactly 1 Call per Page Load / Refresh)**:
+5. **🛡️ Critical Security Guard Rails & Automatic Privacy Shield**:
+   - **Auto-Pauses on Sensitive Pages**: When visiting login/signin forms, password fields (`input[type="password"]`), or checkout payment gateways (`/checkout/payment`, `/pay`, Stripe, PayPal, banking URLs), Wayfinder AI **automatically halts all AI analysis**.
+   - **Privacy Shield Beacon**: Floating beacon turns to a green/gold shield (🛡️) reading *"Wayfinder Privacy Shield Active"*.
+   - **Zero Form Tampering**: In-page purple dots and callout boxes are completely suppressed on sensitive forms.
+   - **Client-Side Regex Redactor**: Automatically sanitizes credit card numbers, CVVs, passwords, SSNs, IBANs, crypto addresses, and API tokens before any text is sent to the AI.
+   - **Chatbox & Selection Guard**: Even if a user pastes a card number or password into Copilot Chat or text selection, it is intercepted and redacted on-device prior to transmission.
+
+6. **Predictable Navigation Analysis (Exactly 1 Call per Page Load / Refresh)**:
    - To conserve token usage and prevent unexpected billing, Wayfinder AI executes **strictly 1 AI analysis per page load / refresh**.
    - It will not fire repetitive calls on background DOM mutations or AJAX updates.
    - When navigating to a new URL (including client-side SPA navigation), it resets and runs one clean guidance request for that new page.
    - You can manually trigger a fresh re-analysis anytime using the **🔄 refresh button** in the guidance card header.
 
-6. **In-Page DOM Purple Markers & 4 Modes of Interaction**:
+7. **In-Page DOM Purple Markers & 4 Modes of Interaction**:
    - **Mode 1 (Signal Beacon HUD)**: Floating bottom-right beacon. Hover to preview analysis; click to pin permanently.
    - **Mode 2 (DOM Markers & Callout Boxes)**: Highlighting key action elements with insights and direct *"Ask Copilot"* shortcuts.
    - **Mode 3 (Text Selection Copilot)**: Highlight text anywhere on the page and click *"Analyze with AI"* or *"Discuss in Chat"*.
    - **Mode 4 (Interactive Copilot Chatbox)**: Full interactive chat thread embedded on the page.
 
-7. **Metrics & 🛠️ Developer Debug Mode**:
+8. **📊 Metrics Dashboard & Live Cost Estimator**:
    - Live token and request tracking (Prompt tokens, completion tokens, breakdown by provider).
+   - **Estimated Cost (USD)**: Real-time calculation of your AI spend based on your active provider's token rates (typically fractions of a cent).
+   - **🛡️ Shielded Pages Counter**: Tracks the total number of sensitive login and payment pages safely protected.
+   - **Average Latency**: Tracks real-world roundtrip response times in milliseconds.
    - Toggle **Developer Debug Mode** in Settings to unlock the **"🛠️ Debug Logs"** tab:
      - Inspect exact roundtrip latency in milliseconds.
      - View exact prompt payloads sent to the AI.
      - View full raw JSON responses or error traces.
 
-8. **Local AI Support on macOS / Chrome**:
+9. **Local AI Support on macOS / Chrome**:
    - **Ollama**: Run `llama3.2`, `mistral`, or `qwen2.5` locally accelerated by your Mac's GPU/Metal unified memory (`OLLAMA_ORIGINS="*" ollama serve`).
    - **Chrome Built-in AI (Gemini Nano)**: Support for Chrome's native on-device model (`window.ai` / Prompt API).
 
@@ -160,11 +170,30 @@ ai_assist_chrome/
 Wayfinder AI was designed around user privacy:
 - **Local-First AI (Ollama)**: When using Ollama, 100% of execution happens locally on your computer (`localhost:11434`). Zero web content, URLs, or prompts leave your machine.
 - **External Cloud AI Providers**: When using OpenAI, Claude, Groq, or OpenRouter, page structure and text summaries are transmitted to that provider over encrypted HTTPS under your own API key.
-- **Automatic PII Redaction**: Passwords (`input[type="password"]`), credit cards, CVVs, SSNs, bearer tokens, and form input values are automatically filtered out before transmission.
+- **4-Tier Security Guard Rails**:
+  1. *Automatic Privacy Shield*: Automatically pauses AI analysis when visiting login, password, or payment checkout forms.
+  2. *DOM-Level Exclusion*: Never attaches markers to or scrapes passwords, credit cards, or billing forms.
+  3. *Client-Side Regex Redactor*: Automatically sanitizes card numbers, CVVs, passwords, SSNs, IBANs, crypto addresses, tokens, and emails before dispatch.
+  4. *Chat & Selection Guard*: User chats and highlighted text selections are filtered on-device prior to network transmission.
+- **Commercial API Privacy (Zero Model Training)**: In accordance with OpenAI and Anthropic Commercial API terms, data sent via their APIs is **NEVER used to train models** and is purged after 30 days.
 - **Zero Telemetry**: No third-party trackers, analytics, or external logging servers.
 - **Sandboxed Credentials**: API keys are saved exclusively in local Chrome profile storage (`chrome.storage.local`) and never synced to the cloud.
 
-Read the complete [Privacy Policy & Security Architecture](PRIVACY.md).
+---
+
+## 💰 Cloud AI Pricing & Economics
+
+Wayfinder AI uses a strict **1-call-per-page-load policy**, making it exceptionally inexpensive:
+- **Average Analysis Size**: ~288 input tokens + ~240 output tokens = **~530 total tokens**.
+
+| Provider & Model | Input / 1M Tokens | Output / 1M Tokens | Cost per Page | Pages per $1.00 USD | Est. Monthly Cost (30-50 pages/day) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **OpenAI `gpt-4o-mini` (Default)** | **$0.15** | **$0.60** | **~$0.00019** | **~5,260 pages** | **~$0.20 – $0.35 / mo** |
+| **Meta Llama 3.1 8B (via Groq/OpenRouter)** | $0.05 | $0.08 | **~$0.00003** | **~33,000 pages** | **~$0.03 – $0.06 / mo** |
+| **Anthropic Claude 3.5 Haiku** | $0.80 | $4.00 | **~$0.00120** | **~830 pages** | **~$1.20 – $1.80 / mo** |
+| **Ollama (Local Mac AI)** | Free | Free | **$0.00** | **Unlimited** | **$0.00 (Free)** |
+
+Read the full [Privacy Policy & Security Architecture](PRIVACY.md).
 
 ---
 
