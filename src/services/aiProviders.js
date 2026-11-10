@@ -186,16 +186,28 @@ export class AIService {
   }
 
   static async _callChromeBuiltinAI({ systemPrompt, userPrompt, responseFormat }) {
-    // Check if Chrome's window.ai (Gemini Nano) is available in browser context
-    const aiApi = typeof window !== "undefined" ? (window.ai || window.modelExecutionService) : null;
+    // Check if Chrome's Prompt API (Gemini Nano) is available in window or service worker context
+    const aiApi = (typeof globalThis !== "undefined" && globalThis.ai) ||
+                  (typeof window !== "undefined" && (window.ai || window.modelExecutionService)) ||
+                  (typeof self !== "undefined" && (self.ai || self.modelExecutionService)) || null;
+
     if (!aiApi || (!aiApi.languageModel && !aiApi.createTextSession)) {
       throw new Error("Chrome Built-in AI (Gemini Nano) is not enabled on this browser. Enable it in chrome://flags/#optimization-guide-on-device-model and chrome://flags/#prompt-api-for-gemini-nano");
     }
 
     try {
-      const session = aiApi.languageModel
-        ? await aiApi.languageModel.create({ systemPrompt })
-        : await aiApi.createTextSession();
+      let session;
+      if (aiApi.languageModel) {
+        const capabilities = await aiApi.languageModel.capabilities?.();
+        if (capabilities && capabilities.available === "no") {
+          throw new Error("Gemini Nano model is not downloaded or supported on this device. Visit chrome://components to download 'Optimization Guide On Device Model'.");
+        }
+        session = await aiApi.languageModel.create({
+          systemPrompt: systemPrompt || undefined
+        });
+      } else {
+        session = await aiApi.createTextSession();
+      }
 
       const fullPrompt = `${systemPrompt}\n\nTask: ${userPrompt}`;
       const responseText = await session.prompt(fullPrompt);
