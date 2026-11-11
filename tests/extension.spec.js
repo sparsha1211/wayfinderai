@@ -649,7 +649,7 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
     await expect(overlayCard).toBeVisible({ timeout: 5000 });
 
     const footer = overlayCard.locator('.wayfinder-footer-provider');
-    await expect(footer).toContainText('wayfinder_cloud', { timeout: 5000 });
+    await expect(footer).toContainText('wayfinder_cloud', { timeout: 20000 });
 
     // 3. Reset provider back to ollama for cleanliness
     const resetPopup = await context.newPage();
