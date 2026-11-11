@@ -59,8 +59,37 @@ const PROVIDER_RATES = {
 
 const MAX_DEBUG_LOGS = 30;
 
+/**
+ * Retrieve or generate a persistent hardware/install deviceId.
+ * Stored in chrome.storage.sync (which survives uninstalls and reinstalls)
+ * and backed up to chrome.storage.local.
+ */
+async function getOrCreateDeviceId() {
+  try {
+    const syncData = await chrome.storage.sync.get("wayfinder_device_id");
+    if (syncData && syncData.wayfinder_device_id) {
+      return syncData.wayfinder_device_id;
+    }
+  } catch (e) {}
+
+  const localData = await chrome.storage.local.get("wayfinder_device_id");
+  if (localData && localData.wayfinder_device_id) {
+    try { await chrome.storage.sync.set({ wayfinder_device_id: localData.wayfinder_device_id }); } catch (e) {}
+    return localData.wayfinder_device_id;
+  }
+
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  const newDeviceId = "dev_" + Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+
+  await chrome.storage.local.set({ wayfinder_device_id: newDeviceId });
+  try { await chrome.storage.sync.set({ wayfinder_device_id: newDeviceId }); } catch (e) {}
+  return newDeviceId;
+}
+
 // Initialize default settings & metrics on install
 chrome.runtime.onInstalled.addListener(async () => {
+  const deviceId = await getOrCreateDeviceId();
   const current = await chrome.storage.local.get(["wayfinder_settings", "wayfinder_metrics", "wayfinder_debug_logs"]);
   if (!current.wayfinder_settings) {
     const initialSettings = { ...DEFAULT_SETTINGS };
@@ -70,14 +99,17 @@ chrome.runtime.onInstalled.addListener(async () => {
       const res = await fetch(`${endpoint.replace(/\/+$/, "")}/api/v1/auth/trial`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: `user_${Date.now()}@wayfinderai.com` })
+        body: JSON.stringify({
+          email: `user_${Date.now()}@wayfinderai.com`,
+          deviceId
+        })
       });
       if (res.ok) {
         const trialData = await res.json();
         if (trialData.success && trialData.licenseKey) {
           initialSettings.licenseKey = trialData.licenseKey;
           initialSettings.apiKeys.wayfinder_cloud = trialData.licenseKey;
-          console.log("[Wayfinder AI] Automatically activated free trial:", trialData.licenseKey);
+          console.log("[Wayfinder AI] Trial registered for device:", deviceId, trialData.licenseKey);
         }
       }
     } catch (e) {

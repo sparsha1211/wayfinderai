@@ -211,4 +211,46 @@ test.describe('Wayfinder AI Subscription Server Gateway Tests', () => {
     expect(html).toContain('Copy License Key');
   });
 
+  test('SRV-9: Anti-abuse guardrail prevents duplicate trial tokens on plugin reinstall with same deviceId', async () => {
+    const uniqueDeviceId = `test_device_${Date.now()}`;
+
+    // 1. First install: issue trial
+    const res1 = await fetch(`${BASE_URL}/api/v1/auth/trial`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: uniqueDeviceId })
+    });
+    expect(res1.status).toBe(200);
+    const data1 = await res1.json();
+    expect(data1.success).toBe(true);
+    expect(data1.reconnected).toBe(false);
+    const trialKey = data1.licenseKey;
+
+    // 2. Consume 1 query with this trial key
+    const queryRes = await fetch(`${BASE_URL}/api/v1/ai/guidance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${trialKey}`
+      },
+      body: JSON.stringify({ systemPrompt: 'JSON prompt', userPrompt: 'Test' })
+    });
+    expect(queryRes.status).toBe(200);
+    const queryData = await queryRes.json();
+    expect(queryData.quotaRemaining).toBe(24);
+
+    // 3. Simulated Reinstall: calls /api/v1/auth/trial again with the exact same deviceId
+    const res2 = await fetch(`${BASE_URL}/api/v1/auth/trial`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: uniqueDeviceId })
+    });
+    expect(res2.status).toBe(200);
+    const data2 = await res2.json();
+    expect(data2.success).toBe(true);
+    expect(data2.reconnected).toBe(true); // Recognized reinstall!
+    expect(data2.licenseKey).toBe(trialKey); // Same key restored, not a new free 25 quota!
+    expect(data2.quota.remaining).toBe(24); // Kept the consumed quota!
+  });
+
 });

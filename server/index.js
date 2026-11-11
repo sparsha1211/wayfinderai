@@ -4,7 +4,8 @@
  */
 
 import http from "node:http";
-import { validateLicense, createLicense, findLicenseByEmail, SUBSCRIPTION_TIERS } from "./auth.js";
+import crypto from "node:crypto";
+import { validateLicense, createLicense, findLicenseByEmail, findLicenseByDeviceId, SUBSCRIPTION_TIERS } from "./auth.js";
 import { checkRateLimit, getUsageStatus } from "./rateLimiter.js";
 import { executeGuidanceProxy, executeChatProxy } from "./aiProxy.js";
 import { handleStripeEvent, verifyStripeSignature } from "./stripeWebhook.js";
@@ -124,19 +125,48 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 3. Issue Free Trial License
+    // 3. Issue Free Trial License (With Reinstall Anti-Abuse Tracking)
     if (req.method === "POST" && pathname === "/api/v1/auth/trial") {
       const body = await parseBody(req);
+      const clientIp = req.socket.remoteAddress || "127.0.0.1";
+      const deviceId = body.deviceId || `ip_${crypto.createHash("sha256").update(clientIp).digest("hex").slice(0, 16)}`;
+
+      // Check if this deviceId has already received a trial (prevents reinstall quota abuse)
+      const existingLicense = findLicenseByDeviceId(deviceId);
+      if (existingLicense) {
+        const usage = getUsageStatus(existingLicense.licenseKey, SUBSCRIPTION_TIERS.trial.dailyLimit);
+        return sendJson(res, 200, {
+          success: true,
+          reconnected: true,
+          message: "Welcome back! Existing trial restored.",
+          licenseKey: existingLicense.licenseKey,
+          tier: existingLicense.tier,
+          expiresAt: existingLicense.expiresAt,
+          dailyLimit: SUBSCRIPTION_TIERS.trial.dailyLimit,
+          quota: {
+            dailyLimit: SUBSCRIPTION_TIERS.trial.dailyLimit,
+            remaining: usage.remaining,
+            used: usage.used
+          }
+        });
+      }
+
       const email = body.email || `trial_${Date.now()}@wayfinderai.com`;
-      const license = createLicense({ email, tier: "trial", durationDays: 7 });
+      const license = createLicense({ email, tier: "trial", durationDays: 7, deviceId });
 
       return sendJson(res, 200, {
         success: true,
+        reconnected: false,
         message: "Free trial activated! 25 queries per day for 7 days.",
         licenseKey: license.licenseKey,
         tier: "trial",
         expiresAt: license.expiresAt,
-        dailyLimit: SUBSCRIPTION_TIERS.trial.dailyLimit
+        dailyLimit: SUBSCRIPTION_TIERS.trial.dailyLimit,
+        quota: {
+          dailyLimit: SUBSCRIPTION_TIERS.trial.dailyLimit,
+          remaining: SUBSCRIPTION_TIERS.trial.dailyLimit,
+          used: 0
+        }
       });
     }
 

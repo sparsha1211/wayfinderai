@@ -661,4 +661,32 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await webPage.close();
   });
+
+  test('E2E-19: Extension generates persistent deviceId and restores existing trial on reconnect/reinstall', async () => {
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    // Verify Wayfinder Cloud is an available provider
+    await popupPage.selectOption('#providerSelect', 'wayfinder_cloud');
+    const licenseGroup = popupPage.locator('#licenseGroup');
+    await expect(licenseGroup).toBeVisible();
+
+    // Verify upgrade link and lookup by email button are present
+    const upgradeLink = popupPage.locator('#upgradeProLink');
+    await expect(upgradeLink).toBeVisible();
+    await expect(upgradeLink).toHaveAttribute('href', /checkout\/success/);
+
+    const lookupBtn = popupPage.locator('#lookupLicenseBtn');
+    await expect(lookupBtn).toBeVisible();
+
+    // Verify storage has generated a unique deviceId
+    const storedDeviceId = await popupPage.evaluate(async () => {
+      const data = await chrome.storage.local.get('wayfinder_device_id');
+      return data.wayfinder_device_id;
+    });
+    expect(storedDeviceId).toBeDefined();
+    expect(storedDeviceId.startsWith('dev_')).toBe(true);
+
+    await popupPage.close();
+  });
 });

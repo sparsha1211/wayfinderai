@@ -100,9 +100,9 @@ export function generateLicenseKey(tier = "pro") {
 }
 
 /**
- * Create a new license key (e.g. from Stripe checkout)
+ * Create a new license key (e.g. from Stripe checkout or device trial)
  */
-export function createLicense({ email, tier = "pro", durationDays = 30, stripeCustomerId = null, stripeSubscriptionId = null }) {
+export function createLicense({ email, tier = "pro", durationDays = 30, stripeCustomerId = null, stripeSubscriptionId = null, deviceId = null }) {
   const licenseKey = generateLicenseKey(tier);
   const now = Date.now();
   const expiresAt = now + (durationDays * 24 * 60 * 60 * 1000);
@@ -114,6 +114,7 @@ export function createLicense({ email, tier = "pro", durationDays = 30, stripeCu
     active: true,
     createdAt: now,
     expiresAt,
+    deviceId: deviceId || null,
     stripeCustomerId,
     stripeSubscriptionId
   };
@@ -206,6 +207,21 @@ export function findLicenseByEmail(email) {
   const licenses = Object.values(licensesStore).reverse();
   for (const license of licenses) {
     if (license.email && license.email.toLowerCase().trim() === target && license.active) {
+      return license;
+    }
+  }
+  return null;
+}
+
+/**
+ * Find trial or license by unique client device ID (prevents reinstall abuse)
+ */
+export function findLicenseByDeviceId(deviceId) {
+  if (!deviceId || typeof deviceId !== "string") return null;
+  const target = deviceId.trim();
+  licensesStore = loadLicenses();
+  for (const license of Object.values(licensesStore)) {
+    if (license.deviceId && license.deviceId === target) {
       return license;
     }
   }

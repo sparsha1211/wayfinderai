@@ -357,21 +357,29 @@ document.addEventListener("DOMContentLoaded", async () => {
     getTrialBtn.addEventListener("click", async () => {
       const endpoint = endpointInput.value.trim() || "https://wayfinder-ai-gateway-production-038471e5.up.railway.app";
       try {
+        const syncStorage = await chrome.storage.sync.get("wayfinder_device_id").catch(() => ({}));
+        const localStorage = await chrome.storage.local.get("wayfinder_device_id");
+        const deviceId = syncStorage?.wayfinder_device_id || localStorage?.wayfinder_device_id || "";
+
         const res = await fetch(`${endpoint.replace(/\/+$/, '')}/api/v1/auth/trial`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({})
+          body: JSON.stringify({ deviceId })
         });
         const data = await res.json();
         if (data.success && data.licenseKey) {
           licenseKeyInput.value = data.licenseKey;
-          if (licenseTierBadge) licenseTierBadge.textContent = "Trial Active";
+          if (licenseTierBadge) {
+            licenseTierBadge.textContent = data.reconnected ? "Trial Restored" : "Trial Active";
+            licenseTierBadge.style.background = "#e0e7ff";
+            licenseTierBadge.style.color = "#4338ca";
+          }
           const curr = await chrome.storage.local.get("wayfinder_settings");
           const newSettings = curr.wayfinder_settings || {};
           newSettings.licenseKey = data.licenseKey;
           newSettings.activeProvider = "wayfinder_cloud";
           await chrome.storage.local.set({ wayfinder_settings: newSettings });
-          showToast("🎉 7-day Free Trial activated! License key saved.");
+          showToast(data.reconnected ? "Welcome back! Existing trial restored." : "🎉 7-day Free Trial activated! License key saved.");
         } else {
           showToast(`Error: ${data.error || "Could not activate trial"}`);
         }
