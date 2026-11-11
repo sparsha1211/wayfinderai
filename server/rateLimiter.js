@@ -44,12 +44,13 @@ export function checkRateLimit(licenseKey, dailyLimit = 25, ip = "127.0.0.1") {
   // Check if limit reached
   if (record.count >= dailyLimit) {
     const resetInSeconds = Math.max(1, Math.round((record.resetAt - now) / 1000));
+    const hours = Math.ceil(resetInSeconds / 3600);
     return {
       allowed: false,
       remaining: 0,
       limit: dailyLimit,
       resetInSeconds,
-      error: `Daily limit of ${dailyLimit} AI queries reached. Quota resets in ${Math.round(resetInSeconds / 60)} minutes. Upgrade to Pro for higher limits at https://wayfinderai.com/upgrade`
+      error: `Daily limit of ${dailyLimit} free queries reached today. Quota resets in ${hours} hour${hours > 1 ? 's' : ''}. Upgrade to Wayfinder Pro for 1,000 queries/day at https://wayfinder-ai-gateway-production-038471e5.up.railway.app/checkout/success`
     };
   }
 

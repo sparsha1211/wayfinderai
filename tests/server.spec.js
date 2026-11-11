@@ -138,7 +138,7 @@ test.describe('Wayfinder AI Subscription Server Gateway Tests', () => {
     expect(blockedRes.status).toBe(429);
     const blockedData = await blockedRes.json();
     expect(blockedData.success).toBe(false);
-    expect(blockedData.error).toContain('Daily limit of 25 AI queries reached');
+    expect(blockedData.error).toContain('Daily limit of 25');
   });
 
   test('SRV-6: POST /api/v1/webhooks/stripe provisions license on checkout.session.completed', async () => {

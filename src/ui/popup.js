@@ -370,7 +370,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (data.success && data.licenseKey) {
           licenseKeyInput.value = data.licenseKey;
           if (licenseTierBadge) {
-            licenseTierBadge.textContent = data.reconnected ? "Trial Restored" : "Trial Active";
+            licenseTierBadge.textContent = "Free (25/day)";
             licenseTierBadge.style.background = "#e0e7ff";
             licenseTierBadge.style.color = "#4338ca";
           }
@@ -379,7 +379,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           newSettings.licenseKey = data.licenseKey;
           newSettings.activeProvider = "wayfinder_cloud";
           await chrome.storage.local.set({ wayfinder_settings: newSettings });
-          showToast(data.reconnected ? "Welcome back! Existing trial restored." : "🎉 7-day Free Trial activated! License key saved.");
+          showToast(data.reconnected ? "Welcome back! Free Tier restored (25 queries/day)." : "🎉 Free Tier activated! 25 queries per day, resets daily.");
         } else {
           showToast(`Error: ${data.error || "Could not activate trial"}`);
         }

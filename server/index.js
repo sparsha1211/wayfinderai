@@ -131,14 +131,14 @@ const server = http.createServer(async (req, res) => {
       const clientIp = req.socket.remoteAddress || "127.0.0.1";
       const deviceId = body.deviceId || `ip_${crypto.createHash("sha256").update(clientIp).digest("hex").slice(0, 16)}`;
 
-      // Check if this deviceId has already received a trial (prevents reinstall quota abuse)
+      // Check if this deviceId has already received a free license (prevents duplicate install abuse)
       const existingLicense = findLicenseByDeviceId(deviceId);
       if (existingLicense) {
         const usage = getUsageStatus(existingLicense.licenseKey, SUBSCRIPTION_TIERS.trial.dailyLimit);
         return sendJson(res, 200, {
           success: true,
           reconnected: true,
-          message: "Welcome back! Existing trial restored.",
+          message: "Welcome back! Existing Free Tier restored (25 queries/day).",
           licenseKey: existingLicense.licenseKey,
           tier: existingLicense.tier,
           expiresAt: existingLicense.expiresAt,
@@ -151,13 +151,14 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const email = body.email || `trial_${Date.now()}@wayfinderai.com`;
-      const license = createLicense({ email, tier: "trial", durationDays: 7, deviceId });
+      const email = body.email || `free_${Date.now()}@wayfinderai.com`;
+      // Free Tier does not expire (10-year buffer), resets 25 queries every 24 hours
+      const license = createLicense({ email, tier: "trial", durationDays: 3650, deviceId });
 
       return sendJson(res, 200, {
         success: true,
         reconnected: false,
-        message: "Free trial activated! 25 queries per day for 7 days.",
+        message: "Wayfinder Free Tier activated! 25 queries per day, every day. Quota resets daily.",
         licenseKey: license.licenseKey,
         tier: "trial",
         expiresAt: license.expiresAt,

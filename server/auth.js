@@ -19,8 +19,14 @@ if (!fs.existsSync(DATA_DIR)) {
 
 // Built-in Subscription Tiers
 export const SUBSCRIPTION_TIERS = {
+  free: {
+    name: "Wayfinder Free",
+    dailyLimit: 25,
+    maxTokensPerCall: 2000,
+    priceMonthly: 0
+  },
   trial: {
-    name: "Free Trial",
+    name: "Wayfinder Free",
     dailyLimit: 25,
     maxTokensPerCall: 2000,
     priceMonthly: 0
