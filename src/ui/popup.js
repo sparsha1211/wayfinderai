@@ -329,7 +329,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (licenseKeyInput) {
         licenseKeyInput.value = currentSettings.licenseKey || currentSettings.apiKeys?.wayfinder_cloud || "";
       }
-      endpointHint.textContent = "Wayfinder Cloud Server Gateway (Default: http://localhost:3000)";
+      endpointHint.textContent = "Wayfinder Cloud Server Gateway (Default: https://wayfinder-ai-gateway-production-038471e5.up.railway.app)";
     } else {
       if (licenseGroup) licenseGroup.style.display = "none";
       if (provider.requiresKey) {
@@ -355,7 +355,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Free trial button listener
   if (getTrialBtn) {
     getTrialBtn.addEventListener("click", async () => {
-      const endpoint = endpointInput.value.trim() || "http://localhost:3000";
+      const endpoint = endpointInput.value.trim() || "https://wayfinder-ai-gateway-production-038471e5.up.railway.app";
       try {
         const res = await fetch(`${endpoint.replace(/\/+$/, '')}/api/v1/auth/trial`, {
           method: "POST",

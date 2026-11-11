@@ -51,11 +51,21 @@ export async function executeGuidanceProxy({
     return generateMockGuidanceResponse();
   }
 
+  let finalSystemPrompt = systemPrompt || "You are Wayfinder AI, an intelligent web navigation assistant. Return valid JSON.";
+  let finalUserPrompt = userPrompt || "Analyze this webpage and return guidance in JSON.";
+
+  // OpenAI strictly requires the word 'json' in messages when response_format: { type: 'json_object' } is enabled
+  if (responseFormat === "json") {
+    if (!finalSystemPrompt.toLowerCase().includes("json")) {
+      finalSystemPrompt += "\n\nImportant: You must respond in valid JSON format.";
+    }
+  }
+
   const payload = {
     model: model || DEFAULT_MODEL,
     messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt }
+      { role: "system", content: finalSystemPrompt },
+      { role: "user", content: finalUserPrompt }
     ],
     temperature: 0.2,
     max_tokens: maxTokens

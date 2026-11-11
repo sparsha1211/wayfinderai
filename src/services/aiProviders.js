@@ -8,7 +8,7 @@ export const PROVIDERS = {
   wayfinder_cloud: {
     id: "wayfinder_cloud",
     name: "Wayfinder Cloud (Subscription)",
-    defaultEndpoint: "http://localhost:3000",
+    defaultEndpoint: "https://wayfinder-ai-gateway-production-038471e5.up.railway.app",
     defaultModel: "gpt-4o-mini",
     models: ["gpt-4o-mini", "claude-3-5-haiku", "gpt-4o"],
     requiresKey: false,

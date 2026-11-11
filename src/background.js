@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
   },
   customEndpoints: {
     ollama: "http://localhost:11434/api/chat",
-    wayfinder_cloud: "http://localhost:3000"
+    wayfinder_cloud: "https://wayfinder-ai-gateway-production-038471e5.up.railway.app"
   },
   selectedModels: {
     wayfinder_cloud: "gpt-4o-mini",
@@ -209,7 +209,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "VERIFY_SUBSCRIPTION_LICENSE") {
-    const { licenseKey, endpoint = "http://localhost:3000" } = message.payload || {};
+    const { licenseKey, endpoint = "https://wayfinder-ai-gateway-production-038471e5.up.railway.app" } = message.payload || {};
     fetch(`${endpoint.replace(/\/+$/, "")}/api/v1/auth/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
