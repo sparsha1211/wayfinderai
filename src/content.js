@@ -1259,13 +1259,23 @@
       `;
     }
 
+    const isQuotaLimit = /daily limit|quota|429|exceeded|upgrade to pro/i.test(errorMessage);
+    const upgradeHtml = isQuotaLimit ? `
+      <div class="wayfinder-quota-upgrade-box" style="margin: 12px 0; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border: 1px solid #6366f1; border-radius: 8px; padding: 14px; text-align: center; color: white;">
+        <div style="font-weight: 700; font-size: 13px; margin-bottom: 4px; color: #a5b4fc;">⚡ Daily AI Quota Reached</div>
+        <p style="font-size: 11.5px; color: #cbd5e1; margin-bottom: 10px; line-height: 1.4;">You've used all free queries for today. Upgrade to Wayfinder Pro for 1,000 queries/day & faster response times.</p>
+        <a href="https://wayfinder-ai-gateway-production-038471e5.up.railway.app/checkout/success" target="_blank" style="display: inline-block; background: #6366f1; color: white; text-decoration: none; font-size: 11.5px; font-weight: 700; padding: 8px 16px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">Upgrade to Wayfinder Pro ($9.99/mo) ➔</a>
+      </div>
+    ` : "";
+
     cardBody.innerHTML = `
       ${bannerHtml}
       <div class="wayfinder-error-state">
-        <div class="wayfinder-error-icon">⚠️</div>
-        <div class="wayfinder-error-title">AI Guidance Notice</div>
+        <div class="wayfinder-error-icon">${isQuotaLimit ? "⚡" : "⚠️"}</div>
+        <div class="wayfinder-error-title">${isQuotaLimit ? "Quota Limit Reached" : "AI Guidance Notice"}</div>
         <div class="wayfinder-error-msg">${escapeHtml(errorMessage)}</div>
-        <p class="wayfinder-error-help">Check your API key in the extension popup or verify provider settings.</p>
+        ${upgradeHtml}
+        <p class="wayfinder-error-help">${isQuotaLimit ? "Upgrade to Wayfinder Pro or enter a BYOK API key in popup." : "Check your API key in the extension popup or verify provider settings."}</p>
         ${lastPageAssistanceData?.prompts?.userPrompt ? `
           <details class="wayfinder-prompt-details">
             <summary class="wayfinder-prompt-toggle">👁️ View Active AI Prompt Sent</summary>

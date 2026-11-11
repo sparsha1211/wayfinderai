@@ -381,6 +381,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // Lookup license by email listener
+  const lookupLicenseBtn = document.getElementById("lookupLicenseBtn");
+  if (lookupLicenseBtn) {
+    lookupLicenseBtn.addEventListener("click", async () => {
+      const email = prompt("Enter the email address you used at Stripe checkout:");
+      if (!email || !email.trim()) return;
+      try {
+        const endpoint = endpointInput.value.trim() || "https://wayfinder-ai-gateway-production-038471e5.up.railway.app";
+        const res = await fetch(`${endpoint.replace(/\/+$/, "")}/api/v1/auth/lookup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim() })
+        });
+        const data = await res.json();
+        if (data.success && data.licenseKey) {
+          licenseKeyInput.value = data.licenseKey;
+          if (licenseTierBadge) {
+            licenseTierBadge.textContent = "Pro Active";
+            licenseTierBadge.style.background = "#dcfce7";
+            licenseTierBadge.style.color = "#15803d";
+          }
+          const curr = await chrome.storage.local.get("wayfinder_settings");
+          const newSettings = curr.wayfinder_settings || {};
+          newSettings.licenseKey = data.licenseKey;
+          newSettings.activeProvider = "wayfinder_cloud";
+          await chrome.storage.local.set({ wayfinder_settings: newSettings });
+          showToast(`🎉 Subscription found! Pro key ${data.licenseKey.slice(0, 11)}... activated.`);
+        } else {
+          alert(`No active subscription found for "${email}". Please verify the email used at checkout.`);
+        }
+      } catch (err) {
+        showToast(`Lookup failed: ${err.message}`);
+      }
+    });
+  }
+
   function updateStatusDisplay(enabled) {
     if (enabled) {
       statusText.textContent = "Wayfinder AI Active";

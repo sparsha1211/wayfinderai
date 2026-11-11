@@ -9,7 +9,7 @@ import { WebResearcher } from "./services/webResearcher.js";
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  activeProvider: "ollama",
+  activeProvider: "wayfinder_cloud",
   licenseKey: "wf_live_test_pro_key_12345", // Wayfinder Cloud subscription license key
   apiKeys: {
     openai: "",
@@ -63,7 +63,27 @@ const MAX_DEBUG_LOGS = 30;
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(["wayfinder_settings", "wayfinder_metrics", "wayfinder_debug_logs"]);
   if (!current.wayfinder_settings) {
-    await chrome.storage.local.set({ wayfinder_settings: DEFAULT_SETTINGS });
+    const initialSettings = { ...DEFAULT_SETTINGS };
+    // Automatically provision free trial license for newly installed user
+    try {
+      const endpoint = initialSettings.customEndpoints?.wayfinder_cloud || "https://wayfinder-ai-gateway-production-038471e5.up.railway.app";
+      const res = await fetch(`${endpoint.replace(/\/+$/, "")}/api/v1/auth/trial`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: `user_${Date.now()}@wayfinderai.com` })
+      });
+      if (res.ok) {
+        const trialData = await res.json();
+        if (trialData.success && trialData.licenseKey) {
+          initialSettings.licenseKey = trialData.licenseKey;
+          initialSettings.apiKeys.wayfinder_cloud = trialData.licenseKey;
+          console.log("[Wayfinder AI] Automatically activated free trial:", trialData.licenseKey);
+        }
+      }
+    } catch (e) {
+      console.warn("[Wayfinder AI] Offline or could not auto-provision trial key, using default:", e);
+    }
+    await chrome.storage.local.set({ wayfinder_settings: initialSettings });
   }
   if (!current.wayfinder_metrics) {
     await chrome.storage.local.set({ wayfinder_metrics: DEFAULT_METRICS });
