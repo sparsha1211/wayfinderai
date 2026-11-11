@@ -6,10 +6,11 @@
 import { AIService, PROVIDERS } from "./services/aiProviders.js";
 import { PatternLearner } from "./services/patternLearner.js";
 import { WebResearcher } from "./services/webResearcher.js";
+import { PrivacyShield } from "./services/privacyShield.js";
 
 const DEFAULT_SETTINGS = {
   enabled: true,
-  activeProvider: "wayfinder_cloud",
+  activeProvider: "ollama",
   licenseKey: "wf_live_test_pro_key_12345", // Wayfinder Cloud subscription license key
   apiKeys: {
     openai: "",
@@ -320,6 +321,12 @@ async function handlePageAssistance(pageContext) {
     return { success: false, disabled: true, error: "Wayfinder AI is currently paused/disabled." };
   }
 
+  // Defense-in-depth: Privacy Shield validation in background service worker
+  const shieldCheck = PrivacyShield.checkPageContext(pageContext?.url || "");
+  if (shieldCheck.isSensitive) {
+    return { success: false, shielded: true, error: shieldCheck.reason || "Privacy Shield halted AI on sensitive page" };
+  }
+
   const providerId = wayfinder_settings.activeProvider || "ollama";
   const apiKey = providerId === "wayfinder_cloud"
     ? (wayfinder_settings.licenseKey || wayfinder_settings.apiKeys?.wayfinder_cloud || "")
@@ -400,7 +407,7 @@ You MUST respond strictly with valid JSON conforming to this schema:
 - Headings: ${JSON.stringify(pageContext.headings || [])}
 - Meta Description: ${pageContext.metaDescription || "N/A"}${semanticEntityStr}
 - Interactive Form / Action Elements: ${JSON.stringify(pageContext.actionElements || [])}
-- Condensed Body Text Snippet: ${pageContext.condensedText || ""}
+- Condensed Body Text Snippet: ${PrivacyShield.sanitizeText(pageContext.condensedText || "")}
 
 Autonomous Background Web Research & Link Peek Context:
 ${research.formattedSummary}

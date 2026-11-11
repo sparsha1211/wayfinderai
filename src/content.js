@@ -181,25 +181,55 @@
      2. 4-TIER SECURITY GUARDRAILS (ZERO-LEAKAGE PRIVACY SHIELD)
      ========================================================================= */
 
+  // Dynamic initialization of modular PrivacyShield Engine from web_accessible_resources
+  (async function initPrivacyShield() {
+    try {
+      if (chrome.runtime && chrome.runtime.getURL) {
+        const shieldUrl = chrome.runtime.getURL("src/services/privacyShield.js");
+        const module = await import(shieldUrl);
+        if (module && module.PrivacyShield) {
+          window.WayfinderPrivacyShield = module.PrivacyShield;
+        }
+      }
+    } catch (e) {
+      // Classic fallback active below
+    }
+  })();
+
   /**
    * Tier 1: Client-Side Text Sanitizer & Redactor
-   * Redacts passwords, API keys, bearer tokens, credit cards, SSNs, and emails.
+   * Redacts passwords, API keys, bearer tokens, credit cards, SSNs, emails, GitHub tokens, and private keys.
    */
   function sanitizeSensitiveText(text) {
     if (!text || typeof text !== "string") return "";
+    if (window.WayfinderPrivacyShield) {
+      return window.WayfinderPrivacyShield.sanitizeText(text);
+    }
     return text
+      // Personal info & emails
       .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[EMAIL_REDACTED]")
+      // Credit cards
       .replace(/\b(?:\d{4}[ -]?){3}\d{4}\b/g, "[CARD_REDACTED]")
+      .replace(/\b\d{4}[ -]?\d{6}[ -]?\d{5}\b/g, "[CARD_REDACTED]")
+      .replace(/(?:cvv|cvc|security\s*code|cid)\s*[:=]?\s*\b\d{3,4}\b/gi, "[CVV_REDACTED]")
+      // SSN
       .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[SSN_REDACTED]")
-      .replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|bearer\s+[a-zA-Z0-9._~+/-]+=*)/gi, "[KEY_REDACTED]")
-      .replace(/\b(?:\d{3,4}\b(?=.*(?:cvv|cvc|security code)))/gi, "[CVV_REDACTED]")
-      .replace(/(?:password|secret|pin|passwd)\s*[:=]\s*[^\s,;]+/gi, "[PASSWORD_REDACTED]");
+      // Passwords
+      .replace(/(?:password|secret|pin|passwd)\s*[:=]\s*[^\s,;]+/gi, "[PASSWORD_REDACTED]")
+      // GitHub & Developer Tokens
+      .replace(/\b(?:ghp_[a-zA-Z0-9]{30,}|github_pat_[a-zA-Z0-9_]{20,})\b/g, "[GITHUB_TOKEN_REDACTED]")
+      .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[AWS_KEY_REDACTED]")
+      .replace(/-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g, "[PRIVATE_KEY_REDACTED]")
+      .replace(/\b(?:sk-[a-zA-Z0-9_-]{20,}|bearer\s+[a-zA-Z0-9._~+/-]+=*)/gi, "[KEY_REDACTED]");
   }
 
   /**
    * Tier 2: Sensitive DOM Element Detector
    */
   function isSensitiveElement(el) {
+    if (window.WayfinderPrivacyShield) {
+      return window.WayfinderPrivacyShield.isSensitiveElement(el);
+    }
     if (!el || !el.getAttribute) return false;
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute("type") || "").toLowerCase();
@@ -226,15 +256,20 @@
    * Tier 3: Sensitive Page & Authentication Context Checker
    */
   function checkSensitivePageContext() {
+    if (window.WayfinderPrivacyShield) {
+      return window.WayfinderPrivacyShield.checkPageContext(window.location.href, document);
+    }
+
     const url = window.location.href.toLowerCase();
     const path = window.location.pathname.toLowerCase();
 
-    // Sensitive URL paths & domains (checkout, billing, login, authentication, payment gateways)
+    // Sensitive URL paths & domains (checkout, billing, login, authentication, payment gateways, GitHub secrets)
     const sensitivePatterns = [
       "/checkout/payment", "/checkout/billing", "/pay", "/payment", "/billing",
       "/login", "/signin", "/signup", "/register", "/auth", "/oauth",
       "/account/password", "/forgot-password", "/reset-password",
-      "paypal.com", "stripe.com", "checkout.stripe.com", "pay.google.com"
+      "paypal.com", "stripe.com", "checkout.stripe.com", "pay.google.com",
+      "github.com/settings/tokens", "github.com/settings/keys", "/settings/secrets"
     ];
 
     for (const pat of sensitivePatterns) {
@@ -951,7 +986,7 @@
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
             </svg>
           </button>
-          <button class="wayfinder-icon-btn" id="wayfinder-copy-logs-btn" title="Copy Diagnostic Logs for Debugging">
+          <button class="wayfinder-icon-btn wayfinder-copy-logs-btn" id="wayfinder-copy-logs-btn" title="Copy Diagnostic Logs for Debugging">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
               <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
