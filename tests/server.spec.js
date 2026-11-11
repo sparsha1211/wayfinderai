@@ -18,12 +18,19 @@ test.afterAll(async () => {
 
 test.describe('Wayfinder AI Subscription Server Gateway Tests', () => {
 
-  test('SRV-1: GET /api/v1/health returns ok status', async () => {
+  test('SRV-1: GET /api/v1/health and GET / return ok status', async () => {
     const res = await fetch(`${BASE_URL}/api/v1/health`);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.status).toBe('ok');
     expect(data.service).toBe('Wayfinder AI Gateway');
+
+    // Also verify root path /
+    const rootRes = await fetch(`${BASE_URL}/`);
+    expect(rootRes.status).toBe(200);
+    const rootData = await rootRes.json();
+    expect(rootData.status).toBe('ok');
+    expect(rootData.message).toContain('online');
   });
 
   test('SRV-2: POST /api/v1/auth/verify validates Pro and Trial keys', async () => {

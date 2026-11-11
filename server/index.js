@@ -79,12 +79,21 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
 
   try {
-    // 1. Health check
-    if (req.method === "GET" && pathname === "/api/v1/health") {
+    // 1. Health check & Root gateway status
+    if (req.method === "GET" && (pathname === "/" || pathname === "/api/v1/health")) {
       return sendJson(res, 200, {
         status: "ok",
         service: "Wayfinder AI Gateway",
         version: "1.0.0",
+        message: "Wayfinder AI Cloud Gateway is online and ready.",
+        endpoints: {
+          health: "/api/v1/health",
+          checkoutSuccess: "/checkout/success",
+          authVerify: "/api/v1/auth/verify",
+          authTrial: "/api/v1/auth/trial",
+          authLookup: "/api/v1/auth/lookup",
+          stripeWebhook: "/api/v1/webhooks/stripe"
+        },
         timestamp: Date.now()
       });
     }
