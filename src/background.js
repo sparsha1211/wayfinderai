@@ -7,6 +7,7 @@ import { AIService, PROVIDERS } from "./services/aiProviders.js";
 import { PatternLearner } from "./services/patternLearner.js";
 import { WebResearcher } from "./services/webResearcher.js";
 import { PrivacyShield } from "./services/privacyShield.js";
+import { MemoryManager } from "./services/memoryManager.js";
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -273,6 +274,94 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  // Memory Layer & Context API endpoints
+  if (message.type === "GET_MEMORIES") {
+    MemoryManager.listMemories(message.payload || {})
+      .then(memories => sendResponse({ success: true, memories }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "ADD_MEMORY") {
+    MemoryManager.addMemory(message.payload)
+      .then(memory => sendResponse({ success: true, memory }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "UPDATE_MEMORY") {
+    const { id, patch } = message.payload || {};
+    MemoryManager.updateMemory(id, patch)
+      .then(memory => sendResponse({ success: true, memory }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "DELETE_MEMORY") {
+    MemoryManager.deleteMemory(message.payload?.id)
+      .then(deleted => sendResponse({ success: true, deleted }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "GET_MEMORY_CONFIG") {
+    MemoryManager.getConfig()
+      .then(config => sendResponse({ success: true, config }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "UPDATE_MEMORY_CONFIG") {
+    MemoryManager.updateConfig(message.payload)
+      .then(config => sendResponse({ success: true, config }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "IMPORT_MEMORY_CHATGPT") {
+    const { data, options } = message.payload || {};
+    MemoryManager.importFromChatGPT(data, options)
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "IMPORT_MEMORY_CLAUDE") {
+    const { data, options } = message.payload || {};
+    MemoryManager.importFromClaude(data, options)
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "EXPORT_MEMORY_JSON") {
+    MemoryManager.exportToJSON()
+      .then(jsonStr => sendResponse({ success: true, json: jsonStr }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "EXPORT_MEMORY_MARKDOWN") {
+    MemoryManager.exportToMarkdown()
+      .then(mdStr => sendResponse({ success: true, markdown: mdStr }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "TEST_MEMORY_RETRIEVAL") {
+    MemoryManager.retrieveContext(message.payload || {})
+      .then(context => sendResponse({ success: true, context }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "RESET_MEMORIES_DEFAULT") {
+    MemoryManager.resetToDefaults()
+      .then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 /**
@@ -342,7 +431,21 @@ async function handlePageAssistance(pageContext) {
   // Autonomous background research: link peeking & market competitor comparison
   const research = await WebResearcher.gatherAutonomousContext(pageContext);
 
-  const systemPrompt = `You are Wayfinder AI, an autonomous, universally intelligent browser copilot.
+  // Retrieve hybrid contextual memory & token budget
+  let memoryContext = { formattedPrompt: "", selectedMemories: [], tokenStats: {} };
+  try {
+    memoryContext = await MemoryManager.retrieveContext({
+      query: pageContext.title || "",
+      pageContext,
+      maxTokens: 800
+    });
+  } catch (e) {
+    console.warn("[Wayfinder Memory] Retrieval fallback in page assistance:", e);
+  }
+
+  const memoryBlock = memoryContext.formattedPrompt ? `\n\n${memoryContext.formattedPrompt}\n` : "";
+
+  const systemPrompt = `You are Wayfinder AI, an autonomous, universally intelligent browser copilot.${memoryBlock}
 Your mission is to understand ANY webpage the user visits—whether they are booking flights (e.g. Skyscanner, Google Flights), reserving accommodations/stays (e.g. Airbnb, Booking.com), shopping online, reading tech documentation, comparing SaaS tools, searching real estate, or general research.
 
 NEVER rely on hardcoded domain assumptions. Autonomously deduce:
@@ -520,7 +623,21 @@ async function handleSelectedTextAnalysis({ selectedText, pageUrl, pageTitle }) 
   const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
   const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
 
-  const systemPrompt = `You are Wayfinder AI, an in-page reading & navigation copilot.
+  let memoryContext = { formattedPrompt: "" };
+  try {
+    const parsedDomain = pageUrl ? new URL(pageUrl).hostname : "";
+    memoryContext = await MemoryManager.retrieveContext({
+      query: selectedText.slice(0, 300),
+      pageContext: { title: pageTitle, url: pageUrl, domain: parsedDomain },
+      maxTokens: 500
+    });
+  } catch (e) {
+    console.warn("[Wayfinder Memory] Selection memory retrieval fallback:", e);
+  }
+
+  const memoryBlock = memoryContext.formattedPrompt ? `\n\n${memoryContext.formattedPrompt}\n` : "";
+
+  const systemPrompt = `You are Wayfinder AI, an in-page reading & navigation copilot.${memoryBlock}
 The user highlighted a section of text on a webpage.
 Provide a clear, high-density analysis:
 1. Quick Explanation / TL;DR (1-2 sentences)
@@ -601,7 +718,27 @@ async function handleChatWithPageContext({ query, pageContext = {}, selectedText
   const endpoint = wayfinder_settings.customEndpoints?.[providerId] || PROVIDERS[providerId]?.defaultEndpoint;
   const model = wayfinder_settings.selectedModels?.[providerId] || PROVIDERS[providerId]?.defaultModel;
 
-  const systemPrompt = `You are Wayfinder AI Copilot, a brilliant, interactive in-page browser assistant.
+  let memoryContext = { formattedPrompt: "", selectedMemories: [], tokenStats: {} };
+  try {
+    memoryContext = await MemoryManager.retrieveContext({
+      query,
+      pageContext,
+      maxTokens: 1200
+    });
+
+    // Record this user query as ephemeral working context if substantial
+    if (query && query.length > 5) {
+      MemoryManager.recordWorkingContext(`User queried on ${pageContext?.domain || 'web'}: "${query.slice(0, 120)}"`, {
+        title: `Copilot Query: ${pageContext?.title ? pageContext.title.slice(0, 30) : 'Active Tab'}`
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.warn("[Wayfinder Memory] Chat memory retrieval fallback:", e);
+  }
+
+  const memoryBlock = memoryContext.formattedPrompt ? `\n\n${memoryContext.formattedPrompt}\n` : "";
+
+  const systemPrompt = `You are Wayfinder AI Copilot, a brilliant, interactive in-page browser assistant.${memoryBlock}
 You are directly embedded on this page with the user.
 Your role:
 - Autonomously deduce what the user is trying to accomplish on this page (booking flights, reserving stays/hotels, evaluating products, reading tech documentation, comparing SaaS tools, job searching, etc.).

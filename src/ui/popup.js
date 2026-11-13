@@ -60,6 +60,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (btn.getAttribute("data-tab") === "tab-metrics") {
         loadMetrics();
       }
+      if (btn.getAttribute("data-tab") === "tab-memory") {
+        loadMemoryTab();
+      }
       if (btn.getAttribute("data-tab") === "tab-debug") {
         loadDebugLogs();
       }
@@ -559,6 +562,323 @@ document.addEventListener("DOMContentLoaded", async () => {
           </div>
         `;
       }).join("");
+    });
+  }
+
+  // =========================================================================
+  // MEMORY & CONTEXT TAB CONTROLLER
+  // =========================================================================
+  let currentMemoryFilter = "all";
+
+  // Elements
+  const activeProjectInput = document.getElementById("activeProjectInput");
+  const activeProjectBadge = document.getElementById("activeProjectBadge");
+  const saveProjectBtn = document.getElementById("saveProjectBtn");
+  const tokenBudgetValue = document.getElementById("tokenBudgetValue");
+  const memoryCardsContainer = document.getElementById("memoryCardsContainer");
+  const filterPills = document.querySelectorAll(".mem-pill");
+
+  // Modals
+  const addMemoryModal = document.getElementById("addMemoryModal");
+  const importMemoryModal = document.getElementById("importMemoryModal");
+  const testContextModal = document.getElementById("testContextModal");
+
+  // Buttons
+  const openAddMemoryBtn = document.getElementById("openAddMemoryBtn");
+  const closeAddMemoryBtn = document.getElementById("closeAddMemoryBtn");
+  const cancelNewMemoryBtn = document.getElementById("cancelNewMemoryBtn");
+  const saveNewMemoryBtn = document.getElementById("saveNewMemoryBtn");
+
+  const openImportModalBtn = document.getElementById("openImportModalBtn");
+  const closeImportMemoryBtn = document.getElementById("closeImportMemoryBtn");
+  const cancelImportBtn = document.getElementById("cancelImportBtn");
+  const executeImportBtn = document.getElementById("executeImportBtn");
+
+  const exportMarkdownBtn = document.getElementById("exportMarkdownBtn");
+  const openTestContextBtn = document.getElementById("openTestContextBtn");
+  const closeTestContextBtn = document.getElementById("closeTestContextBtn");
+  const runTestRetrievalBtn = document.getElementById("runTestRetrievalBtn");
+
+  // Filter pill clicks
+  filterPills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      filterPills.forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      currentMemoryFilter = pill.getAttribute("data-filter");
+      renderMemories();
+    });
+  });
+
+  // Save active project name
+  if (saveProjectBtn) {
+    saveProjectBtn.addEventListener("click", () => {
+      const proj = activeProjectInput.value.trim() || "Wayfinder AI";
+      chrome.runtime.sendMessage({
+        type: "UPDATE_MEMORY_CONFIG",
+        payload: { activeProject: proj }
+      }, (res) => {
+        if (res && res.success) {
+          activeProjectBadge.textContent = proj;
+          showToast(`Active project set to "${proj}"`);
+          renderMemories();
+        }
+      });
+    });
+  }
+
+  // Add memory modal controls
+  if (openAddMemoryBtn) {
+    openAddMemoryBtn.addEventListener("click", () => {
+      addMemoryModal.style.display = "flex";
+    });
+  }
+  const closeAddModal = () => { if (addMemoryModal) addMemoryModal.style.display = "none"; };
+  if (closeAddMemoryBtn) closeAddMemoryBtn.addEventListener("click", closeAddModal);
+  if (cancelNewMemoryBtn) cancelNewMemoryBtn.addEventListener("click", closeAddModal);
+
+  if (saveNewMemoryBtn) {
+    saveNewMemoryBtn.addEventListener("click", () => {
+      const type = document.getElementById("newMemType").value;
+      const title = document.getElementById("newMemTitle").value;
+      const content = document.getElementById("newMemContent").value;
+      const tagsRaw = document.getElementById("newMemTags").value;
+      const importance = document.getElementById("newMemImportance").value;
+      const activeProj = activeProjectInput.value.trim() || "Wayfinder AI";
+
+      if (!content.trim()) {
+        alert("Please enter memory content.");
+        return;
+      }
+
+      const tags = tagsRaw.split(",").map(t => t.trim()).filter(Boolean);
+
+      chrome.runtime.sendMessage({
+        type: "ADD_MEMORY",
+        payload: {
+          type,
+          title: title || content.slice(0, 30),
+          content,
+          project: activeProj,
+          tags,
+          importance: Number(importance) || 3
+        }
+      }, (res) => {
+        if (res && res.success) {
+          closeAddModal();
+          document.getElementById("newMemTitle").value = "";
+          document.getElementById("newMemContent").value = "";
+          document.getElementById("newMemTags").value = "";
+          showToast("Memory saved successfully!");
+          renderMemories();
+        }
+      });
+    });
+  }
+
+  // Import modal controls
+  if (openImportModalBtn) {
+    openImportModalBtn.addEventListener("click", () => {
+      importMemoryModal.style.display = "flex";
+    });
+  }
+  const closeImportModal = () => { if (importMemoryModal) importMemoryModal.style.display = "none"; };
+  if (closeImportMemoryBtn) closeImportMemoryBtn.addEventListener("click", closeImportModal);
+  if (cancelImportBtn) cancelImportBtn.addEventListener("click", closeImportModal);
+
+  if (executeImportBtn) {
+    executeImportBtn.addEventListener("click", () => {
+      const source = document.getElementById("importSourceSelect").value;
+      const targetProj = document.getElementById("importTargetProject").value.trim() || "Imported Project";
+      const payload = document.getElementById("importPayloadTextarea").value.trim();
+
+      if (!payload) {
+        alert("Please paste data to import.");
+        return;
+      }
+
+      executeImportBtn.disabled = true;
+      executeImportBtn.textContent = "Importing...";
+
+      const msgType = source === "claude" ? "IMPORT_MEMORY_CLAUDE" : "IMPORT_MEMORY_CHATGPT";
+
+      chrome.runtime.sendMessage({
+        type: msgType,
+        payload: {
+          data: payload,
+          options: { defaultProject: targetProj }
+        }
+      }, (res) => {
+        executeImportBtn.disabled = false;
+        executeImportBtn.textContent = "Parse & Import Memories";
+
+        if (res && res.success) {
+          closeImportModal();
+          document.getElementById("importPayloadTextarea").value = "";
+          showToast(`✓ Imported ${res.count} memories from ${source}!`);
+          renderMemories();
+        } else {
+          alert(`Import failed: ${res?.error || 'Unknown error'}`);
+        }
+      });
+    });
+  }
+
+  // Export controls (Claude/ChatGPT Markdown)
+  if (exportMarkdownBtn) {
+    exportMarkdownBtn.addEventListener("click", () => {
+      chrome.runtime.sendMessage({ type: "EXPORT_MEMORY_MARKDOWN" }, (res) => {
+        if (res && res.markdown) {
+          navigator.clipboard.writeText(res.markdown).then(() => {
+            showToast("📋 Copied Claude/ChatGPT Markdown context to clipboard!");
+          });
+        }
+      });
+    });
+  }
+
+  // Test retrieval simulator
+  if (openTestContextBtn) {
+    openTestContextBtn.addEventListener("click", () => {
+      testContextModal.style.display = "flex";
+    });
+  }
+  const closeTestModal = () => { if (testContextModal) testContextModal.style.display = "none"; };
+  if (closeTestContextBtn) closeTestContextBtn.addEventListener("click", closeTestModal);
+
+  if (runTestRetrievalBtn) {
+    runTestRetrievalBtn.addEventListener("click", () => {
+      const query = document.getElementById("testQueryInput").value.trim();
+      const domain = document.getElementById("testDomainInput").value.trim();
+      const resultBox = document.getElementById("testResultBox");
+
+      runTestRetrievalBtn.textContent = "Simulating...";
+
+      chrome.runtime.sendMessage({
+        type: "TEST_MEMORY_RETRIEVAL",
+        payload: {
+          query,
+          pageContext: { domain, title: `Test on ${domain}` },
+          maxTokens: 1000
+        }
+      }, (res) => {
+        runTestRetrievalBtn.textContent = "Run Hybrid Retrieval";
+        if (res && res.success) {
+          resultBox.style.display = "block";
+          resultBox.textContent = `Tokens used: ${res.context.tokenStats.used} / ${res.context.tokenStats.budget}\n` +
+            `Selected memories: ${res.context.tokenStats.itemCount}\n\n` +
+            `--- INJECTED CONTEXT BLOCK ---\n${res.context.formattedPrompt}`;
+        }
+      });
+    });
+  }
+
+  function loadMemoryTab() {
+    chrome.runtime.sendMessage({ type: "GET_MEMORY_CONFIG" }, (res) => {
+      if (res && res.config) {
+        if (activeProjectInput) activeProjectInput.value = res.config.activeProject || "Wayfinder AI";
+        if (activeProjectBadge) activeProjectBadge.textContent = res.config.activeProject || "Wayfinder AI";
+        if (tokenBudgetValue) tokenBudgetValue.textContent = `${(res.config.defaultTokenBudget || 1000).toLocaleString()} tokens`;
+      }
+    });
+    renderMemories();
+  }
+
+  function renderMemories() {
+    chrome.runtime.sendMessage({ type: "GET_MEMORIES" }, (res) => {
+      if (!res || !res.memories) return;
+      const all = res.memories;
+
+      // Update pill counters
+      const counts = {
+        all: all.length,
+        long_term: all.filter(m => m.type === "long_term").length,
+        project: all.filter(m => m.type === "project").length,
+        knowledge: all.filter(m => m.type === "knowledge").length,
+        working_context: all.filter(m => m.type === "working_context").length
+      };
+
+      const cAll = document.getElementById("countAll");
+      const cLong = document.getElementById("countLongTerm");
+      const cProj = document.getElementById("countProject");
+      const cKnow = document.getElementById("countKnowledge");
+      const cWork = document.getElementById("countWorking");
+
+      if (cAll) cAll.textContent = counts.all;
+      if (cLong) cLong.textContent = counts.long_term;
+      if (cProj) cProj.textContent = counts.project;
+      if (cKnow) cKnow.textContent = counts.knowledge;
+      if (cWork) cWork.textContent = counts.working_context;
+
+      // Filter
+      const filtered = currentMemoryFilter === "all"
+        ? all
+        : all.filter(m => m.type === currentMemoryFilter);
+
+      if (!memoryCardsContainer) return;
+
+      if (filtered.length === 0) {
+        memoryCardsContainer.innerHTML = `
+          <div style="text-align: center; padding: 24px 10px; color: #94a3b8; font-size: 11.5px;">
+            No memories found in this partition.<br>Click <strong>➕ Add Memory</strong> or <strong>📥 Import</strong> to create one.
+          </div>
+        `;
+        return;
+      }
+
+      const badgeClassMap = {
+        long_term: "badge-core",
+        project: "badge-project",
+        knowledge: "badge-knowledge",
+        working_context: "badge-session"
+      };
+
+      const badgeNameMap = {
+        long_term: "🧠 Core",
+        project: "📂 Project",
+        knowledge: "🌐 Knowledge",
+        working_context: "⚡ Session"
+      };
+
+      memoryCardsContainer.innerHTML = filtered.map(m => {
+        const badgeClass = badgeClassMap[m.type] || "badge-core";
+        const badgeName = badgeNameMap[m.type] || m.type;
+        const stars = "★".repeat(m.importance || 3);
+        const tags = (m.tags || []).slice(0, 4).map(t => `<span class="memory-tag-chip">#${escapeHtml(t)}</span>`).join("");
+
+        return `
+          <div class="memory-card" data-id="${m.id}">
+            <div class="memory-card-header">
+              <div>
+                <span class="memory-badge ${badgeClass}" style="margin-right: 4px;">${badgeName}</span>
+                <span style="font-size: 10px; color: #6366f1; font-weight: 600;">[${escapeHtml(m.project || 'Global')}]</span>
+                <div class="memory-card-title" style="margin-top: 3px;">${escapeHtml(m.title)}</div>
+              </div>
+              <button type="button" class="delete-mem-btn" data-id="${m.id}" title="Delete Memory">🗑️</button>
+            </div>
+            <div class="memory-card-body">${escapeHtml(m.content)}</div>
+            <div class="memory-card-footer">
+              <div class="memory-tags-cloud">${tags}</div>
+              <span style="color: #f59e0b; font-size: 11px;">${stars}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // Bind delete handlers
+      memoryCardsContainer.querySelectorAll(".delete-mem-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute("data-id");
+          if (confirm("Delete this memory?")) {
+            chrome.runtime.sendMessage({ type: "DELETE_MEMORY", payload: { id } }, (res) => {
+              if (res && res.success) {
+                renderMemories();
+                showToast("Memory deleted");
+              }
+            });
+          }
+        });
+      });
     });
   }
 

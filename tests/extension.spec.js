@@ -689,4 +689,70 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await popupPage.close();
   });
+
+  test('E2E-20: Memory & Context Tab renders multi-tier memories, adds new entry, and simulates hybrid retrieval', async () => {
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    // 1. Click Memory Tab
+    const memoryTabBtn = popupPage.locator('button[data-tab="tab-memory"]');
+    await expect(memoryTabBtn).toBeVisible();
+    await memoryTabBtn.click();
+
+    const memorySection = popupPage.locator('#tab-memory');
+    await expect(memorySection).toBeVisible();
+
+    // 2. Verify default starter memories are rendered
+    const memoryCards = popupPage.locator('.memory-card');
+    await expect(memoryCards.first()).toBeVisible({ timeout: 5000 });
+    const count = await memoryCards.count();
+    expect(count).toBeGreaterThan(0);
+
+    // 3. Add a new Project Memory
+    const addBtn = popupPage.locator('#openAddMemoryBtn');
+    await addBtn.click();
+
+    const addModal = popupPage.locator('#addMemoryModal');
+    await expect(addModal).toBeVisible();
+
+    await popupPage.selectOption('#newMemType', 'project');
+    await popupPage.fill('#newMemTitle', 'E2E Testing Conventions');
+    await popupPage.fill('#newMemContent', 'Always use Playwright with headless: false when testing Chrome Extensions.');
+    await popupPage.fill('#newMemTags', 'playwright, e2e, testing');
+    await popupPage.selectOption('#newMemImportance', '5');
+
+    await popupPage.click('#saveNewMemoryBtn');
+    await expect(addModal).toBeHidden();
+
+    // Verify newly added card is rendered
+    await expect(popupPage.locator('.memory-card:has-text("E2E Testing Conventions")')).toBeVisible({ timeout: 5000 });
+
+    // 4. Test Filter Pills
+    const corePill = popupPage.locator('.mem-pill[data-filter="long_term"]');
+    await corePill.click();
+    await expect(corePill).toHaveClass(/active/);
+
+    const allPill = popupPage.locator('.mem-pill[data-filter="all"]');
+    await allPill.click();
+
+    // 5. Test Context Simulator Modal
+    const testContextBtn = popupPage.locator('#openTestContextBtn');
+    await testContextBtn.click();
+
+    const testModal = popupPage.locator('#testContextModal');
+    await expect(testModal).toBeVisible();
+
+    await popupPage.fill('#testQueryInput', 'How should we run extension tests?');
+    await popupPage.fill('#testDomainInput', 'github.com');
+    await popupPage.click('#runTestRetrievalBtn');
+
+    const resultBox = popupPage.locator('#testResultBox');
+    await expect(resultBox).toBeVisible({ timeout: 5000 });
+    const resultText = await resultBox.textContent();
+    expect(resultText).toContain('Tokens used:');
+    expect(resultText).toContain('<user_memory_and_context>');
+    expect(resultText).toContain('E2E Testing Conventions');
+
+    await popupPage.close();
+  });
 });

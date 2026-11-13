@@ -32,6 +32,7 @@
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
       <button class="tab-btn active" data-tab="tab-settings">Settings & AI</button>
+      <button class="tab-btn" data-tab="tab-memory">🧠 Memory</button>
       <button class="tab-btn" data-tab="tab-metrics">Metrics & Usage</button>
       <button class="tab-btn" data-tab="tab-about">Guide</button>
       <!-- Dev Mode Tab (Only visible when Debug Mode is turned ON) -->
@@ -176,6 +177,146 @@
       </div>
 
       <div id="statusToast" class="status-toast" style="display:none;"></div>
+    </section>
+
+    <!-- TAB: Multi-Tier Personal & Project Memory Layer -->
+    <section id="tab-memory" class="tab-content">
+      <!-- Project & Budget Control Bar -->
+      <div class="memory-ctrl-bar">
+        <div class="form-group" style="margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="activeProjectInput" style="margin-bottom:0; font-size: 11px;">Active Project</label>
+            <span id="activeProjectBadge" class="memory-badge badge-project">Wayfinder AI</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="activeProjectInput" class="form-input" style="padding: 6px 10px; font-size: 12px;" placeholder="e.g. Wayfinder AI or Acme" value="Wayfinder AI">
+            <button type="button" id="saveProjectBtn" class="btn btn-secondary-sm" style="padding: 6px 10px;">Set</button>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b; margin-bottom: 4px;">
+          <span>Context Memory Budget:</span>
+          <strong id="tokenBudgetValue" style="color: #4f46e5;">1,000 tokens</strong>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="memory-actions-row">
+        <button type="button" id="openAddMemoryBtn" class="btn-memory-action btn-add-mem">➕ Add Memory</button>
+        <button type="button" id="openImportModalBtn" class="btn-memory-action btn-import-mem">📥 Import (Claude/GPT)</button>
+        <button type="button" id="exportMarkdownBtn" class="btn-memory-action btn-export-mem">📤 Export</button>
+        <button type="button" id="openTestContextBtn" class="btn-memory-action btn-test-mem">🔍 Test</button>
+      </div>
+
+      <!-- Filter Pills -->
+      <div class="memory-filter-pills" id="memoryFilterPills">
+        <button class="mem-pill active" data-filter="all">All (<span id="countAll">0</span>)</button>
+        <button class="mem-pill" data-filter="long_term">🧠 Core (<span id="countLongTerm">0</span>)</button>
+        <button class="mem-pill" data-filter="project">📂 Project (<span id="countProject">0</span>)</button>
+        <button class="mem-pill" data-filter="knowledge">🌐 Knowledge (<span id="countKnowledge">0</span>)</button>
+        <button class="mem-pill" data-filter="working_context">⚡ Session (<span id="countWorking">0</span>)</button>
+      </div>
+
+      <!-- Memory Card List -->
+      <div id="memoryCardsContainer" class="memory-cards-container">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- INLINE MODAL: Add New Memory -->
+      <div id="addMemoryModal" class="memory-modal" style="display:none;">
+        <div class="memory-modal-content">
+          <div class="memory-modal-header">
+            <h4>Add New Memory</h4>
+            <button type="button" class="close-modal-btn" id="closeAddMemoryBtn">✕</button>
+          </div>
+          <div class="form-group">
+            <label for="newMemType">Partition / Memory Tier</label>
+            <select id="newMemType" class="form-select">
+              <option value="long_term">🧠 Core Long-Term (User Bio & Directives)</option>
+              <option value="project">📂 Project (Architecture, Decisions, Stack)</option>
+              <option value="knowledge">🌐 Domain Knowledge (Gotchas, Rules, Tools)</option>
+              <option value="working_context">⚡ Working Context (Ephemeral Session)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="newMemTitle">Label / Title</label>
+            <input type="text" id="newMemTitle" class="form-input" placeholder="e.g. Senior TypeScript Engineer">
+          </div>
+          <div class="form-group">
+            <label for="newMemContent">Memory Content / Directives</label>
+            <textarea id="newMemContent" class="form-textarea" rows="3" placeholder="Explain the directive or context..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="newMemTags">Tags & Domains (comma separated)</label>
+            <input type="text" id="newMemTags" class="form-input" placeholder="typescript, stripe, github.com">
+          </div>
+          <div class="form-group">
+            <label for="newMemImportance">Importance (1 to 5)</label>
+            <select id="newMemImportance" class="form-select">
+              <option value="5">⭐⭐⭐⭐⭐ 5 - Critical Directive (Always Prioritize)</option>
+              <option value="4">⭐⭐⭐⭐ 4 - High Importance</option>
+              <option value="3" selected>⭐⭐⭐ 3 - Normal</option>
+              <option value="2">⭐⭐ 2 - Low</option>
+              <option value="1">⭐ 1 - Minor / Incidental</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button type="button" id="saveNewMemoryBtn" class="btn btn-primary" style="flex:1;">Save Memory</button>
+            <button type="button" id="cancelNewMemoryBtn" class="btn btn-secondary-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- INLINE MODAL: Import from ChatGPT / Claude -->
+      <div id="importMemoryModal" class="memory-modal" style="display:none;">
+        <div class="memory-modal-content">
+          <div class="memory-modal-header">
+            <h4>Import from Claude / ChatGPT</h4>
+            <button type="button" class="close-modal-btn" id="closeImportMemoryBtn">✕</button>
+          </div>
+          <div class="form-group">
+            <label for="importSourceSelect">Format / Source</label>
+            <select id="importSourceSelect" class="form-select">
+              <option value="chatgpt">ChatGPT (Custom Instructions / Memory list / JSON)</option>
+              <option value="claude">Claude (Project Knowledge / Markdown)</option>
+              <option value="json">Wayfinder Full Backup (JSON)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="importTargetProject">Assign to Project</label>
+            <input type="text" id="importTargetProject" class="form-input" placeholder="Imported Project" value="Imported Project">
+          </div>
+          <div class="form-group">
+            <label for="importPayloadTextarea">Paste Context, Markdown, or JSON</label>
+            <textarea id="importPayloadTextarea" class="form-textarea" rows="4" placeholder="Paste your ChatGPT memory list, Claude project knowledge, or JSON..."></textarea>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button type="button" id="executeImportBtn" class="btn btn-primary" style="flex:1;">Parse & Import Memories</button>
+            <button type="button" id="cancelImportBtn" class="btn btn-secondary-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- INLINE MODAL: Test Hybrid Retrieval Simulator -->
+      <div id="testContextModal" class="memory-modal" style="display:none;">
+        <div class="memory-modal-content">
+          <div class="memory-modal-header">
+            <h4>Hybrid Context Retrieval Simulator</h4>
+            <button type="button" class="close-modal-btn" id="closeTestContextBtn">✕</button>
+          </div>
+          <div class="form-group">
+            <label for="testQueryInput">Simulated User Query</label>
+            <input type="text" id="testQueryInput" class="form-input" placeholder="e.g. How do we process Stripe webhooks?" value="Stripe webhook secrets">
+          </div>
+          <div class="form-group">
+            <label for="testDomainInput">Simulated Domain</label>
+            <input type="text" id="testDomainInput" class="form-input" placeholder="e.g. stripe.com or github.com" value="stripe.com">
+          </div>
+          <button type="button" id="runTestRetrievalBtn" class="btn btn-primary" style="width:100%; margin-bottom: 8px;">Run Hybrid Retrieval</button>
+          
+          <div id="testResultBox" style="display:none; background: #0f172a; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px; max-height: 140px; overflow-y: auto; color: #38bdf8; white-space: pre-wrap;"></div>
+        </div>
+      </div>
     </section>
 
     <!-- TAB 2: Metrics & Token Usage Dashboard -->
