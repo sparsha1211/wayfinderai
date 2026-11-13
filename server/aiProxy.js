@@ -6,24 +6,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sanitizeSensitiveText } from "./security.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Read OpenAI Key from Environment, or fallback to local test config
+// Read OpenAI Key from Environment, or fallback to local test config in development
 function resolveServerApiKey() {
   if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith("sk-")) {
     return process.env.OPENAI_API_KEY;
   }
 
-  // Check local test config file if present in dev environment
-  const localConfigPath = path.resolve(__dirname, "../tests/test.config.local.json");
-  if (fs.existsSync(localConfigPath)) {
-    try {
-      const cfg = JSON.parse(fs.readFileSync(localConfigPath, "utf-8"));
-      if (cfg.apiKey && cfg.apiKey.startsWith("sk-")) {
-        return cfg.apiKey;
-      }
-    } catch (e) {}
+  // In production environments (e.g. Railway), strictly rely on environment variables
+  if (process.env.NODE_ENV !== "production") {
+    const localConfigPath = path.resolve(__dirname, "../tests/test.config.local.json");
+    if (fs.existsSync(localConfigPath)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(localConfigPath, "utf-8"));
+        if (cfg.apiKey && cfg.apiKey.startsWith("sk-")) {
+          return cfg.apiKey;
+        }
+      } catch (e) {}
+    }
   }
 
   return "";
@@ -94,7 +97,7 @@ export async function executeGuidanceProxy({
       const parsed = JSON.parse(errorBody);
       if (parsed.error?.message) errMessage = parsed.error.message;
     } catch (e) {}
-    throw new Error(errMessage);
+    throw new Error(sanitizeSensitiveText(errMessage));
   }
 
   const result = await response.json();
@@ -177,7 +180,7 @@ export async function executeChatProxy({
       const parsed = JSON.parse(errorBody);
       if (parsed.error?.message) errMessage = parsed.error.message;
     } catch (e) {}
-    throw new Error(errMessage);
+    throw new Error(sanitizeSensitiveText(errMessage));
   }
 
   const result = await response.json();

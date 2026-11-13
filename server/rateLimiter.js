@@ -101,3 +101,29 @@ export function getUsageStatus(licenseKey, dailyLimit = 25) {
 export function resetQuota(licenseKey) {
   usageStore.delete(licenseKey);
 }
+
+// Sliding-window IP rate limiter for public unauthenticated endpoints (e.g. 60 req/minute per IP)
+const ipWindowStore = new Map();
+
+/**
+ * Throttle public endpoint requests by IP to protect against brute-force and scraping
+ * @param {string} ip
+ * @param {number} limit
+ * @param {number} windowMs
+ * @returns {{ allowed: boolean, remaining: number, resetInSeconds?: number }}
+ */
+export function checkIpThrottle(ip = "127.0.0.1", limit = 60, windowMs = 60 * 1000) {
+  const now = Date.now();
+  let record = ipWindowStore.get(ip);
+  if (!record || now > record.resetAt) {
+    record = { count: 1, resetAt: now + windowMs };
+    ipWindowStore.set(ip, record);
+    return { allowed: true, remaining: limit - 1 };
+  }
+  if (record.count >= limit) {
+    const resetInSeconds = Math.max(1, Math.ceil((record.resetAt - now) / 1000));
+    return { allowed: false, remaining: 0, resetInSeconds };
+  }
+  record.count += 1;
+  return { allowed: true, remaining: limit - record.count };
+}

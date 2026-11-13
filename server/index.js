@@ -6,19 +6,25 @@
 import http from "node:http";
 import crypto from "node:crypto";
 import { validateLicense, createLicense, findLicenseByEmail, findLicenseByDeviceId, SUBSCRIPTION_TIERS } from "./auth.js";
-import { checkRateLimit, getUsageStatus } from "./rateLimiter.js";
+import { checkRateLimit, getUsageStatus, checkIpThrottle } from "./rateLimiter.js";
 import { executeGuidanceProxy, executeChatProxy } from "./aiProxy.js";
 import { handleStripeEvent, verifyStripeSignature } from "./stripeWebhook.js";
+import { SECURITY_HEADERS, isProhibitedPath, sanitizeSensitiveText, escapeHtml } from "./security.js";
 
 const PORT = process.env.PORT || 3000;
 
 /**
- * Standard CORS and JSON Headers for Chrome Extension clients
+ * Standard CORS and Hardened Security Headers for Chrome Extension clients
  */
 function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-Device-Id");
+
+  // Apply strict security headers
+  for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
+    res.setHeader(header, value);
+  }
 }
 
 function sendJson(res, statusCode, data) {
@@ -78,6 +84,11 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const pathname = url.pathname;
+
+  // 0. Probing & Traversal Guard: Immediately block attempts to read .env, .git, data, shadow, etc.
+  if (isProhibitedPath(pathname)) {
+    return sendJson(res, 403, { error: "Access Forbidden: Probing sensitive paths is prohibited.", code: "PROBE_FORBIDDEN" });
+  }
 
   try {
     // 1. Health check & Root gateway status
@@ -173,6 +184,12 @@ const server = http.createServer(async (req, res) => {
 
     // 3b. Lookup License by Email (For user retrieval)
     if (req.method === "POST" && pathname === "/api/v1/auth/lookup") {
+      const clientIp = req.socket.remoteAddress || "127.0.0.1";
+      const throttle = checkIpThrottle(clientIp, 30);
+      if (!throttle.allowed) {
+        return sendJson(res, 429, { success: false, error: "Too many lookup attempts. Please wait a minute." });
+      }
+
       const body = await parseBody(req);
       const email = body.email;
       if (!email) {
@@ -193,6 +210,7 @@ const server = http.createServer(async (req, res) => {
     // 3c. Customer Checkout Success & License Display Web Page
     if (req.method === "GET" && (pathname === "/checkout/success" || pathname === "/success")) {
       const email = url.searchParams.get("email") || "";
+      const safeEmail = escapeHtml(email);
       const license = email ? findLicenseByEmail(email) : null;
 
       const html = `<!DOCTYPE html>
@@ -230,17 +248,17 @@ const server = http.createServer(async (req, res) => {
     ${license ? `
     <div class="key-box">
       <div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 6px;">Your Pro License Key</div>
-      <div class="key-code" id="licenseKey">${license.licenseKey}</div>
+      <div class="key-code" id="licenseKey">${escapeHtml(license.licenseKey)}</div>
       <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('licenseKey').innerText); this.innerText='✓ Copied to Clipboard!';">📋 Copy License Key</button>
     </div>
     ` : `
     <div class="key-box">
       <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 8px;">Enter the email you used at Stripe Checkout to reveal your key:</div>
       <form class="lookup-form" method="GET" action="/checkout/success">
-        <input class="lookup-input" type="email" name="email" placeholder="you@domain.com" required value="${email}">
+        <input class="lookup-input" type="email" name="email" placeholder="you@domain.com" required value="${safeEmail}">
         <button class="lookup-btn" type="submit">Find Key</button>
       </form>
-      ${email ? `<div style="color: #f87171; font-size: 12px; margin-top: 8px;">No active license found for "${email}". If payment just processed, please wait a few seconds and try again.</div>` : ''}
+      ${email ? `<div style="color: #f87171; font-size: 12px; margin-top: 8px;">No active license found for "${safeEmail}". If payment just processed, please wait a few seconds and try again.</div>` : ''}
     </div>
     `}
 
@@ -401,8 +419,20 @@ const server = http.createServer(async (req, res) => {
     // 404 Catch-All
     return sendJson(res, 404, { error: "Route not found", path: pathname });
   } catch (error) {
-    console.error("[Wayfinder Server Error]", error);
-    return sendJson(res, 500, { error: error.message || "Internal server error" });
+    const errorId = crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36);
+    console.error(`[Wayfinder Server Error ref:${errorId}]`, error);
+
+    // In production, never reveal raw internal exceptions or stack traces to clients
+    const isProd = process.env.NODE_ENV === "production";
+    const safeError = isProd
+      ? "An internal server error occurred. Your request could not be completed."
+      : sanitizeSensitiveText(error.message || "Internal server error");
+
+    return sendJson(res, 500, {
+      success: false,
+      error: safeError,
+      errorRef: errorId
+    });
   }
 });
 
