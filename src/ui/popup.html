@@ -152,6 +152,30 @@
         </label>
       </div>
 
+      <!-- Setting: Personal & Project Memory Master Toggle -->
+      <div class="toggle-option-card">
+        <div class="option-info">
+          <span class="option-title">🧠 Personal & Project Memory</span>
+          <span class="option-desc">Enable multi-tier persistent memory (core profile, project context, gotchas) across AI requests.</span>
+        </div>
+        <label class="switch-sm">
+          <input type="checkbox" id="memoryEnabledToggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Setting: Auto-Remember Browsing Activity & Searches -->
+      <div class="toggle-option-card">
+        <div class="option-info">
+          <span class="option-title">⚡ Auto-Remember Searches & Tabs</span>
+          <span class="option-desc">Automatically remember search queries (Google, GitHub, Bing) and open tab context into working memory.</span>
+        </div>
+        <label class="switch-sm">
+          <input type="checkbox" id="autoRememberSettingsToggle" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
       <div class="section-label" style="margin-top: 16px;">Developer Tools</div>
 
       <!-- Setting: Developer Debug Mode Toggle -->
@@ -181,6 +205,18 @@
 
     <!-- TAB: Multi-Tier Personal & Project Memory Layer -->
     <section id="tab-memory" class="tab-content">
+      <!-- Opt-In Toggle Controls for Memory Layer -->
+      <div style="display: flex; justify-content: space-between; align-items: center; background: #f1f5f9; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #1e293b; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" id="memoryTabMasterToggle" checked>
+          <span>🧠 Memory Layer Active</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #1e293b; font-weight: 600; cursor: pointer;">
+          <input type="checkbox" id="autoRememberActivityToggle" checked>
+          <span>⚡ Auto-Remember Searches</span>
+        </label>
+      </div>
+
       <!-- Project & Budget Control Bar -->
       <div class="memory-ctrl-bar">
         <div class="form-group" style="margin-bottom: 8px;">

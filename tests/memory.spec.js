@@ -211,4 +211,107 @@ Use pre-signed URLs with a 15-minute expiration window for all uploaded user med
     expect(context.formattedPrompt).toContain('## Active Project Memory');
   });
 
+  test('MEM-9: ActivityTracker detects search queries across Google, Bing, DuckDuckGo, and GitHub', () => {
+    const google = MemoryManager.extractSearchQuery('https://www.google.com/search?q=best+flights+to+tokyo+april');
+    expect(google).toEqual({ engine: 'Google', query: 'best flights to tokyo april' });
+
+    const bing = MemoryManager.extractSearchQuery('https://www.bing.com/search?q=playwright+headless+chrome+extensions');
+    expect(bing).toEqual({ engine: 'Bing', query: 'playwright headless chrome extensions' });
+
+    const ddg = MemoryManager.extractSearchQuery('https://duckduckgo.com/?q=stripe+webhook+signature+verification');
+    expect(ddg).toEqual({ engine: 'DuckDuckGo', query: 'stripe webhook signature verification' });
+
+    const github = MemoryManager.extractSearchQuery('https://github.com/search?q=wayfinder+ai+copilot');
+    expect(github).toEqual({ engine: 'GitHub', query: 'wayfinder ai copilot' });
+
+    const nonSearch = MemoryManager.extractSearchQuery('https://news.ycombinator.com/item?id=12345');
+    expect(nonSearch).toBeNull();
+  });
+
+  test('MEM-10: ActivityTracker records search intent and tab transitions into working_context', async () => {
+    // 1. Record Google Search
+    const searchRes = await MemoryManager.recordActivity({
+      url: 'https://www.google.com/search?q=stripe+webhook+signatures+nodejs',
+      title: 'stripe webhook signatures nodejs - Google Search',
+      domain: 'google.com'
+    });
+    expect(searchRes.success).toBe(true);
+    expect(searchRes.type).toBe('search');
+    expect(searchRes.query).toBe('stripe webhook signatures nodejs');
+
+    // Verify it was stored in working_context
+    const working = await MemoryManager.listMemories({ type: MEMORY_TYPES.WORKING_CONTEXT });
+    expect(working.some(m => m.content.includes('stripe webhook signatures nodejs'))).toBe(true);
+
+    // 2. Record tab transition
+    const tabRes = await MemoryManager.recordActivity({
+      url: 'https://docs.stripe.com/webhooks/quickstart',
+      title: 'Stripe Webhooks Documentation & Setup Guide',
+      domain: 'docs.stripe.com'
+    });
+    expect(tabRes.success).toBe(true);
+    expect(tabRes.type).toBe('tab');
+
+    const updatedWorking = await MemoryManager.listMemories({ type: MEMORY_TYPES.WORKING_CONTEXT });
+    expect(updatedWorking.some(m => m.title.includes('docs.stripe.com'))).toBe(true);
+  });
+
+  test('MEM-11: Opt-in Toggles (memoryEnabled and autoRememberActivity) control memory ingestion and injection', async () => {
+    // 1. Disable autoRememberActivity
+    await MemoryManager.updateConfig({ autoRememberActivity: false });
+
+    const skipSearch = await MemoryManager.recordActivity({
+      url: 'https://www.google.com/search?q=should+be+ignored',
+      title: 'should be ignored - Google Search',
+      domain: 'google.com'
+    });
+    expect(skipSearch.skipped).toBe(true);
+    expect(skipSearch.reason).toBe('auto_remember_disabled');
+
+    // Re-enable autoRememberActivity
+    await MemoryManager.updateConfig({ autoRememberActivity: true });
+
+    // 2. Disable memoryEnabled master toggle
+    await MemoryManager.updateConfig({ memoryEnabled: false });
+
+    const retrievalDisabled = await MemoryManager.retrieveContext({
+      query: 'Any question',
+      pageContext: { domain: 'github.com', title: 'GitHub' }
+    });
+    expect(retrievalDisabled.formattedPrompt).toBe('');
+    expect(retrievalDisabled.selectedMemories.length).toBe(0);
+    expect(retrievalDisabled.tokenStats.disabled).toBe(true);
+
+    // Re-enable memory
+    await MemoryManager.updateConfig({ memoryEnabled: true });
+    const retrievalEnabled = await MemoryManager.retrieveContext({
+      query: 'Any question',
+      pageContext: { domain: 'github.com', title: 'GitHub' }
+    });
+    expect(retrievalEnabled.formattedPrompt).toContain('<user_memory_and_context>');
+  });
+
+  test('MEM-12: Beneficial user queries synthesis leverages active project and search context', async () => {
+    await MemoryManager.updateConfig({ activeProject: 'Wayfinder AI' });
+
+    // Add search memory
+    await MemoryManager.recordActivity({
+      url: 'https://www.google.com/search?q=cheap+flights+to+tokyo',
+      title: 'cheap flights to tokyo - Google Search',
+      domain: 'google.com'
+    });
+
+    const store = await MemoryManager.getStore();
+    const working = store[MEMORY_TYPES.WORKING_CONTEXT];
+
+    const queries = await MemoryManager.generateBeneficialQueries({
+      pageContext: { domain: 'skyscanner.com', title: 'Skyscanner Flights' },
+      recentMemories: working
+    });
+
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.some(q => q.includes('Wayfinder AI'))).toBe(true);
+    expect(queries.some(q => q.includes('cheap flights to tokyo'))).toBe(true);
+  });
+
 });

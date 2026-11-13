@@ -755,4 +755,61 @@ test.describe('Wayfinder AI Chrome Extension End-to-End Suite', () => {
 
     await popupPage.close();
   });
+
+  test('E2E-21: Opt-in toggles (Memory Layer & Auto-Remember Searches) control memory ingestion and injection', async () => {
+    const popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${extensionId}/src/ui/popup.html`);
+
+    // 1. Verify toggles exist on Settings Tab
+    const memoryEnabledToggle = popupPage.locator('#memoryEnabledToggle');
+    await expect(memoryEnabledToggle).toBeAttached();
+    await expect(memoryEnabledToggle).toBeChecked();
+
+    const autoRememberSettingsToggle = popupPage.locator('#autoRememberSettingsToggle');
+    await expect(autoRememberSettingsToggle).toBeAttached();
+    await expect(autoRememberSettingsToggle).toBeChecked();
+
+    // 2. Switch to Memory Tab and verify synced toggles
+    await popupPage.click('button[data-tab="tab-memory"]');
+    const memoryTabToggle = popupPage.locator('#memoryTabMasterToggle');
+    await expect(memoryTabToggle).toBeVisible();
+    await expect(memoryTabToggle).toBeChecked();
+
+    const autoRememberTabToggle = popupPage.locator('#autoRememberActivityToggle');
+    await expect(autoRememberTabToggle).toBeVisible();
+    await expect(autoRememberTabToggle).toBeChecked();
+
+    // 3. Uncheck Memory toggle to opt-out
+    await memoryTabToggle.uncheck();
+    await expect(memoryTabToggle).not.toBeChecked();
+
+    // Verify storage reflects memoryEnabled = false
+    const isMemEnabled = await popupPage.evaluate(async () => {
+      const data = await chrome.storage.local.get('wayfinder_settings');
+      return data.wayfinder_settings?.memoryEnabled;
+    });
+    expect(isMemEnabled).toBe(false);
+
+    // 4. Test retrieval simulator with memory disabled
+    await popupPage.click('#openTestContextBtn');
+    await popupPage.click('#runTestRetrievalBtn');
+
+    const resultBox = popupPage.locator('#testResultBox');
+    await expect(resultBox).toBeVisible({ timeout: 5000 });
+    const resultText = await resultBox.textContent();
+    expect(resultText).toContain('Tokens used: 0 / 0');
+
+    // 5. Re-check Memory toggle to opt-in
+    await popupPage.click('#closeTestContextBtn');
+    await memoryTabToggle.check();
+    await expect(memoryTabToggle).toBeChecked();
+
+    const isReEnabled = await popupPage.evaluate(async () => {
+      const data = await chrome.storage.local.get('wayfinder_settings');
+      return data.wayfinder_settings?.memoryEnabled;
+    });
+    expect(isReEnabled).toBe(true);
+
+    await popupPage.close();
+  });
 });

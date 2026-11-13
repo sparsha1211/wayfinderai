@@ -108,6 +108,68 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   learnPatternsToggle.checked = settings.learnPatterns !== false;
 
+  // Memory & Auto-Remember Toggles
+  const memoryEnabledToggle = document.getElementById("memoryEnabledToggle");
+  const autoRememberSettingsToggle = document.getElementById("autoRememberSettingsToggle");
+  const memoryTabMasterToggle = document.getElementById("memoryTabMasterToggle");
+  const autoRememberActivityToggle = document.getElementById("autoRememberActivityToggle");
+
+  const memEnabled = settings.memoryEnabled !== false;
+  const autoRemember = settings.autoRememberActivity !== false;
+
+  if (memoryEnabledToggle) memoryEnabledToggle.checked = memEnabled;
+  if (autoRememberSettingsToggle) autoRememberSettingsToggle.checked = autoRemember;
+  if (memoryTabMasterToggle) memoryTabMasterToggle.checked = memEnabled;
+  if (autoRememberActivityToggle) autoRememberActivityToggle.checked = autoRemember;
+
+  const syncMemoryToggles = async (enabled, autoRem) => {
+    if (memoryEnabledToggle) memoryEnabledToggle.checked = enabled;
+    if (memoryTabMasterToggle) memoryTabMasterToggle.checked = enabled;
+    if (autoRememberSettingsToggle) autoRememberSettingsToggle.checked = autoRem;
+    if (autoRememberActivityToggle) autoRememberActivityToggle.checked = autoRem;
+
+    const curr = await chrome.storage.local.get("wayfinder_settings");
+    const updated = {
+      ...(curr.wayfinder_settings || {}),
+      memoryEnabled: enabled,
+      autoRememberActivity: autoRem
+    };
+    await chrome.storage.local.set({ wayfinder_settings: updated });
+
+    chrome.runtime.sendMessage({
+      type: "UPDATE_MEMORY_CONFIG",
+      payload: { memoryEnabled: enabled, autoRememberActivity: autoRem }
+    });
+  };
+
+  if (memoryEnabledToggle) {
+    memoryEnabledToggle.addEventListener("change", (e) => {
+      syncMemoryToggles(e.target.checked, autoRememberSettingsToggle?.checked ?? true);
+      showToast(e.target.checked ? "🧠 Memory Layer Enabled" : "🧠 Memory Layer Paused");
+    });
+  }
+
+  if (memoryTabMasterToggle) {
+    memoryTabMasterToggle.addEventListener("change", (e) => {
+      syncMemoryToggles(e.target.checked, autoRememberActivityToggle?.checked ?? true);
+      showToast(e.target.checked ? "🧠 Memory Layer Enabled" : "🧠 Memory Layer Paused");
+    });
+  }
+
+  if (autoRememberSettingsToggle) {
+    autoRememberSettingsToggle.addEventListener("change", (e) => {
+      syncMemoryToggles(memoryEnabledToggle?.checked ?? true, e.target.checked);
+      showToast(e.target.checked ? "⚡ Auto-Remember Searches Active" : "⚡ Auto-Remember Searches Paused");
+    });
+  }
+
+  if (autoRememberActivityToggle) {
+    autoRememberActivityToggle.addEventListener("change", (e) => {
+      syncMemoryToggles(memoryTabMasterToggle?.checked ?? true, e.target.checked);
+      showToast(e.target.checked ? "⚡ Auto-Remember Searches Active" : "⚡ Auto-Remember Searches Paused");
+    });
+  }
+
   // Debug mode toggle state
   const isDebug = !!settings.debugMode;
   debugModeToggle.checked = isDebug;
@@ -227,6 +289,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     newSettings.domMarkersEnabled = domMarkersEnabled;
     newSettings.markerStyle = markerStyleSelect ? markerStyleSelect.value : "dot";
     newSettings.learnPatterns = learnPatterns;
+    newSettings.memoryEnabled = memoryEnabledToggle ? memoryEnabledToggle.checked : true;
+    newSettings.autoRememberActivity = autoRememberSettingsToggle ? autoRememberSettingsToggle.checked : true;
     newSettings.debugMode = debugMode;
     newSettings.apiKeys = newSettings.apiKeys || {};
     newSettings.customEndpoints = newSettings.customEndpoints || {};

@@ -1685,15 +1685,33 @@
       ];
     }
 
-    chipsContainer.innerHTML = prompts.map(p => `
-      <button class="wayfinder-quick-chip">${escapeHtml(p)}</button>
-    `).join("");
+    const render = (allPrompts) => {
+      chipsContainer.innerHTML = allPrompts.map(p => `
+        <button class="wayfinder-quick-chip">${escapeHtml(p)}</button>
+      `).join("");
 
-    chipsContainer.querySelectorAll(".wayfinder-quick-chip").forEach(chip => {
-      chip.addEventListener("click", () => {
-        sendChatMessage(chip.innerText);
+      chipsContainer.querySelectorAll(".wayfinder-quick-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          sendChatMessage(chip.innerText);
+        });
       });
-    });
+    };
+
+    render(prompts);
+
+    // Asynchronously fetch personalized, beneficial queries using remembered memory and search context
+    try {
+      chrome.runtime.sendMessage({
+        type: "GET_BENEFICIAL_QUERIES",
+        payload: { pageContext: extractPageContext() }
+      }, (res) => {
+        if (res && res.success && Array.isArray(res.queries) && res.queries.length > 0) {
+          const beneficialPrompts = res.queries.map(q => `🎯 ${q}`);
+          const merged = [...beneficialPrompts.slice(0, 2), ...prompts.slice(0, 3)];
+          render(merged);
+        }
+      });
+    } catch (e) {}
   }
 
   async function sendChatMessage(queryText) {

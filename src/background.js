@@ -7,7 +7,7 @@ import { AIService, PROVIDERS } from "./services/aiProviders.js";
 import { PatternLearner } from "./services/patternLearner.js";
 import { WebResearcher } from "./services/webResearcher.js";
 import { PrivacyShield } from "./services/privacyShield.js";
-import { MemoryManager } from "./services/memoryManager.js";
+import { MemoryManager, MEMORY_TYPES } from "./memory/index.js";
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -32,9 +32,11 @@ const DEFAULT_SETTINGS = {
     meta: "llama-3.1-8b-instant",
     ollama: "llama3.2:latest"
   },
-  domMarkersEnabled: true, // In-page DOM purple markers
-  learnPatterns: true,     // User navigation habit learning
-  debugMode: false         // Developer debug mode (request/response inspector)
+  domMarkersEnabled: true,     // In-page DOM purple markers
+  learnPatterns: true,         // User navigation habit learning
+  memoryEnabled: true,         // Master opt-in toggle for personal & project memory layer
+  autoRememberActivity: true,  // Opt-in toggle to record browsing activities & search queries into working memory
+  debugMode: false             // Developer debug mode (request/response inspector)
 };
 
 const DEFAULT_METRICS = {
@@ -204,15 +206,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "RECORD_PAGE_VISIT") {
-    chrome.storage.local.get("wayfinder_settings").then(({ wayfinder_settings = {} }) => {
+    chrome.storage.local.get("wayfinder_settings").then(async ({ wayfinder_settings = {} }) => {
+      // 1. Existing navigation pattern learner
       if (wayfinder_settings.learnPatterns !== false) {
-        PatternLearner.recordVisit(message.payload)
-          .then(res => sendResponse({ success: true, data: res }))
-          .catch(err => sendResponse({ success: false, error: err.message }));
-      } else {
-        sendResponse({ success: true, skipped: true });
+        PatternLearner.recordVisit(message.payload).catch(() => {});
       }
-    });
+
+      // 2. Auto-remember activity & search queries if opted in
+      if (wayfinder_settings.autoRememberActivity !== false && wayfinder_settings.memoryEnabled !== false) {
+        try {
+          await MemoryManager.recordActivity(message.payload);
+        } catch (e) {
+          console.warn("[Wayfinder Activity Tracker] Error recording activity:", e);
+        }
+      }
+
+      sendResponse({ success: true });
+    }).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === "GET_BENEFICIAL_QUERIES") {
+    const { pageContext = {} } = message.payload || {};
+    MemoryManager.getStore().then(store => {
+      const working = store[MEMORY_TYPES.WORKING_CONTEXT] || [];
+      return MemoryManager.generateBeneficialQueries({ pageContext, recentMemories: working });
+    })
+      .then(queries => sendResponse({ success: true, queries }))
+      .catch(err => sendResponse({ success: false, error: err.message, queries: [] }));
     return true;
   }
 
