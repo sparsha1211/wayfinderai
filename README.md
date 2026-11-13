@@ -62,11 +62,34 @@ A lightweight, professional Chrome Extension (Manifest V3) that acts as an intel
    - **Ollama**: Run `llama3.2`, `mistral`, or `qwen2.5` locally accelerated by your Mac's GPU/Metal unified memory (`OLLAMA_ORIGINS="*" ollama serve`).
    - **Chrome Built-in AI (Gemini Nano)**: Support for Chrome's native on-device model (`window.ai` / Prompt API).
 
+10. **🧠 Multi-Tier Context & Personal Memory Layer (`src/memory/`)**:
+    - **4 Separated Memory Tiers**:
+      - **Core Long-Term Memory**: Enduring bio, directives, communication tone (zero decay).
+      - **Project Memory**: Active project architecture, tech stack, conventions, and milestones.
+      - **Domain Knowledge**: Gotchas bound to hostnames (e.g. `stripe.com`: webhook verification; `railway.app`: secret isolation).
+      - **Working Context**: Ephemeral session focus and recent actions (6-hour half-life exponential decay).
+    - **Hybrid Retrieval & Dynamic Token Budgeting**: Combines BM25 lexical relevance, domain affinity, project matching, importance, and recency decay. Allocates quotas with greedy spillover to prevent context window overflow.
+    - **Search Intent & Browsing Activity Auto-Remember**: Automatically extracts search queries on Google, Bing, DuckDuckGo, GitHub, and Amazon into working context.
+    - **Personalized Beneficial Queries**: Suggests query chips in the Beacon and Copilot Chat (`Cmd+I`) specifically tailored to your active projects and search intent.
+    - **ChatGPT & Claude Importers/Exporters**: Directly imports Claude Project Knowledge Markdown, ChatGPT Custom Instructions, and `conversations.json`, with 1-click Markdown export.
+    - **Full Opt-In Toggles**: Both Memory and Search Activity Tracking feature independent user toggles in Settings and the Memory Tab.
+
 ---
 
-## 🧪 How to Run End-to-End (E2E) Tests
+## 🧪 Automated Testing Suite (52 Tests)
 
-Wayfinder AI includes an automated Playwright testing framework that launches real Chromium with the unpacked extension, loads a sample test page, and verifies all features end-to-end.
+Wayfinder AI features an automated Playwright testing framework covering the Memory Layer, Privacy Shield, Cloud Gateway, and End-to-End Chrome Extension flows:
+
+```bash
+# Run complete test suite (52 tests)
+npm test
+
+# Run specific suites
+npx playwright test tests/memory.spec.js        # 12 Memory layer & hybrid retrieval tests
+npx playwright test tests/privacyShield.spec.js # 6 Privacy Shield provider tests
+npx playwright test tests/server.spec.js        # 13 Cloud server & Stripe webhook tests
+npx playwright test tests/extension.spec.js     # 21 End-to-end browser extension tests
+```
 
 ### 1. Prerequisites
 Ensure Node.js and Playwright dependencies are installed:

@@ -33,7 +33,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/services/privacyShield.js"],
+      "resources": ["src/services/privacyShield.js", "src/memory/*"],
       "matches": ["<all_urls>"]
     }
   ],
